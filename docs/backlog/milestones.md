@@ -231,7 +231,7 @@ Key outputs:
 - Frame-level/fixed-step flush points and cleanup on instance/world teardown.
 
 Representative issues: signal connection handles; deterministic delivery queue;
-flush integration; cleanup and diagnostics.
+flush integration; cleanup and diagnostics; signal bus internal API contract.
 
 Implementation level: Level 2.
 Required tests/checks: Level 2 checks, delivery-order determinism tests,
