@@ -6,7 +6,8 @@
 use core::fmt;
 
 use kinetik_core::{
-    Diagnostic, DiagnosticBlockingScope, DiagnosticCode, DiagnosticSeverity, DiagnosticSource,
+    AgentRepair, Diagnostic, DiagnosticBlockingScope, DiagnosticCode, DiagnosticSeverity,
+    DiagnosticSource, InstanceGuid,
 };
 use kinetik_resource::{ProjectLayout, ProjectPathKind, ResourceError};
 
@@ -244,9 +245,39 @@ impl DiagnosticsStore {
         self.diagnostics.push(diagnostic);
     }
 
+    /// Replaces all current diagnostics owned by `source`.
+    ///
+    /// Other source-owned diagnostics keep their relative order. New
+    /// diagnostics are appended in the iterator order.
+    ///
+    /// # Panics
+    ///
+    /// Panics when any replacement diagnostic is not owned by `source`.
+    pub fn replace_source<I>(&mut self, source: DiagnosticSource, diagnostics: I)
+    where
+        I: IntoIterator<Item = Diagnostic>,
+    {
+        let diagnostics = diagnostics.into_iter().collect::<Vec<_>>();
+        assert!(
+            diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.source == source),
+            "replacement diagnostics must match the replaced source"
+        );
+
+        self.clear_source(source);
+        self.diagnostics.extend(diagnostics);
+    }
+
     /// Clears all diagnostics.
     pub fn clear(&mut self) {
         self.diagnostics.clear();
+    }
+
+    /// Clears all diagnostics owned by `source`.
+    pub fn clear_source(&mut self, source: DiagnosticSource) {
+        self.diagnostics
+            .retain(|diagnostic| diagnostic.source != source);
     }
 
     /// Returns all diagnostics in deterministic insertion order.
@@ -276,12 +307,77 @@ impl DiagnosticsStore {
             .collect()
     }
 
+    /// Returns diagnostics matching `source` in deterministic order.
+    #[must_use]
+    pub fn by_source(&self, source: DiagnosticSource) -> Vec<&Diagnostic> {
+        self.diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.source == source)
+            .collect()
+    }
+
     /// Returns diagnostics matching `blocking` in deterministic order.
     #[must_use]
     pub fn by_blocking_scope(&self, blocking: DiagnosticBlockingScope) -> Vec<&Diagnostic> {
         self.diagnostics
             .iter()
             .filter(|diagnostic| diagnostic.blocking == Some(blocking))
+            .collect()
+    }
+
+    /// Returns diagnostics matching `instance_guid` in deterministic order.
+    #[must_use]
+    pub fn by_instance_guid(&self, instance_guid: InstanceGuid) -> Vec<&Diagnostic> {
+        self.diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.location.instance_guid == Some(instance_guid))
+            .collect()
+    }
+
+    /// Returns diagnostics matching `asset_path` in deterministic order.
+    #[must_use]
+    pub fn by_asset_path(&self, asset_path: &str) -> Vec<&Diagnostic> {
+        self.diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.location.asset_path.as_deref() == Some(asset_path))
+            .collect()
+    }
+
+    /// Returns diagnostics matching `scene_path` in deterministic order.
+    #[must_use]
+    pub fn by_scene_path(&self, scene_path: &str) -> Vec<&Diagnostic> {
+        self.diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.location.scene_path.as_deref() == Some(scene_path))
+            .collect()
+    }
+
+    /// Returns diagnostics matching `script_path` in deterministic order.
+    #[must_use]
+    pub fn by_script_path(&self, script_path: &str) -> Vec<&Diagnostic> {
+        self.diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.location.script_path.as_deref() == Some(script_path))
+            .collect()
+    }
+
+    /// Returns diagnostics matching `property_path` in deterministic order.
+    #[must_use]
+    pub fn by_property_path(&self, property_path: &str) -> Vec<&Diagnostic> {
+        self.diagnostics
+            .iter()
+            .filter(|diagnostic| {
+                diagnostic.location.property_path.as_deref() == Some(property_path)
+            })
+            .collect()
+    }
+
+    /// Returns diagnostics matching `agent_repair` in deterministic order.
+    #[must_use]
+    pub fn by_agent_repair(&self, agent_repair: AgentRepair) -> Vec<&Diagnostic> {
+        self.diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.agent_repair == agent_repair)
             .collect()
     }
 }
@@ -328,10 +424,14 @@ impl ProjectModel {
         I: IntoIterator<Item = P>,
         P: AsRef<str>,
     {
-        self.diagnostics.clear();
-        if let Err(error) = self.layout.validate_required_paths(present_paths) {
-            self.diagnostics.push(resource_error_to_diagnostic(&error));
-        }
+        let diagnostics = self
+            .layout
+            .validate_required_paths(present_paths)
+            .err()
+            .map(|error| resource_error_to_diagnostic(&error))
+            .into_iter();
+        self.diagnostics
+            .replace_source(ResourceError::RESOURCE_SOURCE, diagnostics);
     }
 
     /// Returns project settings.
@@ -388,140 +488,4 @@ pub const fn crate_name() -> &'static str {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use kinetik_resource::ResourceError;
-
-    fn settings() -> ProjectSettingsDocument {
-        ProjectSettingsDocument::new(ProjectIdentity::new("Example", "0.0").unwrap())
-    }
-
-    #[test]
-    fn exposes_crate_name() {
-        assert_eq!(crate_name(), "kinetik-project");
-    }
-
-    #[test]
-    fn project_identity_rejects_empty_required_fields() {
-        assert_eq!(
-            ProjectIdentity::new(" ", "0.0").unwrap_err(),
-            ProjectError::EmptyProjectName
-        );
-        assert_eq!(
-            ProjectIdentity::new("Example", " ").unwrap_err(),
-            ProjectError::EmptyEngineCompatibility
-        );
-    }
-
-    #[test]
-    fn project_errors_convert_to_build_diagnostics() {
-        let diagnostic = ProjectError::EmptyProjectName.to_diagnostic();
-
-        assert_eq!(diagnostic.code, ProjectError::EMPTY_PROJECT_NAME_CODE);
-        assert_eq!(diagnostic.severity, DiagnosticSeverity::Error);
-        assert_eq!(diagnostic.source, ProjectError::PROJECT_SOURCE);
-        assert_eq!(diagnostic.blocking, Some(DiagnosticBlockingScope::Build));
-    }
-
-    #[test]
-    fn default_document_refs_follow_canonical_project_layout() {
-        let refs = ProjectDocumentRefs::from_default_layout();
-
-        assert_eq!(refs.active_scene(), "scenes/main.ktscene");
-        assert_eq!(refs.assets_manifest(), "project/assets.ktmanifest");
-        assert_eq!(refs.instances_manifest(), "project/instances.ktmanifest");
-    }
-
-    #[test]
-    fn document_refs_reject_empty_paths() {
-        assert_eq!(
-            ProjectDocumentRefs::new(
-                "",
-                "project/assets.ktmanifest",
-                "project/instances.ktmanifest"
-            )
-            .unwrap_err(),
-            ProjectError::EmptyDocumentPath {
-                field: "active_scene"
-            }
-        );
-    }
-
-    #[test]
-    fn diagnostics_store_filters_without_reordering() {
-        let warning = Diagnostic::new(
-            DiagnosticCode::new("KT_TEST_WARNING"),
-            DiagnosticSeverity::Warning,
-            DiagnosticSource::new("Test"),
-            "warning",
-        )
-        .with_blocking_scope(DiagnosticBlockingScope::Edit);
-        let error = Diagnostic::new(
-            DiagnosticCode::new("KT_TEST_ERROR"),
-            DiagnosticSeverity::Error,
-            DiagnosticSource::new("Test"),
-            "error",
-        )
-        .with_blocking_scope(DiagnosticBlockingScope::Build);
-        let store = DiagnosticsStore::from_diagnostics(vec![warning.clone(), error.clone()]);
-
-        assert_eq!(store.by_severity(DiagnosticSeverity::Error), vec![&error]);
-        assert_eq!(
-            store.by_blocking_scope(DiagnosticBlockingScope::Edit),
-            vec![&warning]
-        );
-    }
-
-    #[test]
-    fn project_model_stores_identity_and_document_refs_without_editor_state() {
-        let model = ProjectModel::new(settings(), ProjectDocumentRefs::default());
-
-        assert_eq!(model.settings().identity().name(), "Example");
-        assert_eq!(model.documents().active_scene(), "scenes/main.ktscene");
-        assert!(model.diagnostics().is_empty());
-    }
-
-    #[test]
-    fn project_model_records_layout_validation_diagnostics() {
-        let model = ProjectModel::with_layout_validation(
-            settings(),
-            ProjectDocumentRefs::default(),
-            ["Kinetik.toml", "assets"],
-        );
-
-        let diagnostics = model.diagnostics().diagnostics();
-        assert_eq!(diagnostics.len(), 1);
-        assert_eq!(
-            diagnostics[0].code,
-            ResourceError::MISSING_PROJECT_PATHS_CODE
-        );
-        assert_eq!(
-            diagnostics[0].blocking,
-            Some(DiagnosticBlockingScope::Build)
-        );
-    }
-
-    #[test]
-    fn project_model_clears_stale_layout_diagnostics_after_valid_layout() {
-        let mut model = ProjectModel::with_layout_validation(
-            settings(),
-            ProjectDocumentRefs::default(),
-            ["Kinetik.toml"],
-        );
-        assert_eq!(model.diagnostics().len(), 1);
-
-        model.validate_layout([
-            "Kinetik.toml",
-            "scenes",
-            "scenes/main.ktscene",
-            "prefabs",
-            "scripts",
-            "assets",
-            "project",
-            "project/assets.ktmanifest",
-            "project/instances.ktmanifest",
-        ]);
-
-        assert!(model.diagnostics().is_empty());
-    }
-}
+mod tests;
