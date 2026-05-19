@@ -12,3 +12,4 @@ workspace = true
 
 [dependencies]
 kinetik-core = { path = "../kinetik-core" }
+kinetik-reflect = { path = "../kinetik-reflect" }

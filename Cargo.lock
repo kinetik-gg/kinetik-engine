@@ -74,6 +74,7 @@ name = "kinetik-scene"
 version = "0.0.0"
 dependencies = [
  "kinetik-core",
+ "kinetik-reflect",
 ]
 
 [[package]]
