@@ -1,6 +1,6 @@
 # Core Utilities Dependency Survey
 
-Status: Survey complete, no dependency installation proposed.
+Status: Approved survey, no dependency installation approved.
 
 Related ADRs and docs:
 
@@ -184,7 +184,10 @@ Future ownership should be specific:
 
 ## Approval Outcome
 
-This survey recommends no dependency approval and no installation issue.
+Approved by maintainer direction in issue #48 on 2026-05-20.
+
+This survey approves the dependency-free `kinetik-core` direction. No core
+utility dependency installation is approved by this proposal.
 
 If maintainers disagree, create a separate issue for the chosen crate with the
 exact intended owner, features, public API boundary, and required checks.

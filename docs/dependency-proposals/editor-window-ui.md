@@ -1,6 +1,6 @@
 # Editor, Window, and UI Dependency Proposal
 
-Status: Proposed, blocked on maintainer approval and MSRV direction.
+Status: Approved direction, blocked on MSRV/version installation decision.
 
 Related ADRs and docs:
 
@@ -127,5 +127,8 @@ surface interoperability coordinated with `kinetik-render`.
 
 ## Approval Outcome
 
-Implementation must wait for maintainer approval and an MSRV decision for
-Vello. Create a separate installation issue before adding any crates.
+Approved by maintainer direction in issue #48 on 2026-05-20.
+
+Create a separate installation issue before adding any crates. That issue must
+resolve the Vello MSRV/version decision, record exact features, and keep
+editor/window/UI dependencies behind the `kinetik-editor` boundary.
