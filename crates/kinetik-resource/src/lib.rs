@@ -394,6 +394,18 @@ impl AssetManifestEntry {
     pub const fn settings_hash(&self) -> &ImportSettingsHash {
         &self.settings_hash
     }
+
+    /// Converts this in-memory entry into a dependency-free document contract.
+    #[must_use]
+    pub fn to_document(&self) -> AssetManifestEntryDocument {
+        AssetManifestEntryDocument {
+            guid: self.guid().raw(),
+            path: self.path().as_str().to_owned(),
+            importer_id: self.importer_id.clone(),
+            importer_version: self.importer_version.clone(),
+            settings_hash: self.settings_hash.as_str().to_owned(),
+        }
+    }
 }
 
 /// Deterministic in-memory asset manifest.
@@ -460,6 +472,33 @@ impl AssetManifest {
         self.entries.iter().find(|entry| entry.path() == path)
     }
 
+    /// Converts this in-memory manifest into a dependency-free document contract.
+    #[must_use]
+    pub fn to_document(&self) -> AssetManifestDocument {
+        AssetManifestDocument {
+            entries: self
+                .entries
+                .iter()
+                .map(AssetManifestEntry::to_document)
+                .collect(),
+        }
+    }
+
+    /// Creates a validated in-memory manifest from a document contract.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResourceError`] when document entries contain invalid GUIDs,
+    /// paths, importer metadata, or duplicate identities/paths.
+    pub fn from_document(document: AssetManifestDocument) -> ResourceResult<Self> {
+        let entries = document
+            .entries
+            .into_iter()
+            .map(AssetManifestEntry::from_document)
+            .collect::<ResourceResult<Vec<_>>>()?;
+        Self::from_entries(entries)
+    }
+
     fn validate_unique_entries(&self) -> ResourceResult<()> {
         let mut guids = BTreeSet::new();
         let mut paths = BTreeSet::new();
@@ -482,6 +521,71 @@ impl AssetManifest {
                 .cmp(right.path())
                 .then_with(|| left.guid().cmp(&right.guid()))
         });
+    }
+}
+
+/// Dependency-free `project/assets.ktmanifest` document contract.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AssetManifestDocument {
+    /// Manifest entries. Conversion to [`AssetManifest`] validates and sorts them.
+    pub entries: Vec<AssetManifestEntryDocument>,
+}
+
+impl AssetManifestDocument {
+    /// Creates a document contract and normalizes entry order through manifest validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResourceError`] when entries contain invalid or duplicate data.
+    pub fn new(entries: Vec<AssetManifestEntryDocument>) -> ResourceResult<Self> {
+        Ok(AssetManifest::from_document(Self { entries })?.to_document())
+    }
+}
+
+/// Dependency-free asset manifest entry document contract.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssetManifestEntryDocument {
+    /// Stable asset GUID raw value.
+    pub guid: u64,
+    /// Readable `res://` project path.
+    pub path: String,
+    /// Importer identifier.
+    pub importer_id: String,
+    /// Importer version.
+    pub importer_version: String,
+    /// Import settings hash.
+    pub settings_hash: String,
+}
+
+impl AssetManifestEntryDocument {
+    /// Creates an asset manifest entry document.
+    #[must_use]
+    pub fn new(
+        guid: u64,
+        path: impl Into<String>,
+        importer_id: impl Into<String>,
+        importer_version: impl Into<String>,
+        settings_hash: impl Into<String>,
+    ) -> Self {
+        Self {
+            guid,
+            path: path.into(),
+            importer_id: importer_id.into(),
+            importer_version: importer_version.into(),
+            settings_hash: settings_hash.into(),
+        }
+    }
+}
+
+impl AssetManifestEntry {
+    fn from_document(document: AssetManifestEntryDocument) -> ResourceResult<Self> {
+        Self::from_parts(
+            AssetGuid::try_new(document.guid)?,
+            document.path,
+            document.importer_id,
+            document.importer_version,
+            document.settings_hash,
+        )
     }
 }
 
@@ -1051,6 +1155,139 @@ mod tests {
             AssetGuid::new(1)
         );
         assert!(manifest.get_by_guid(AssetGuid::new(99)).is_none());
+    }
+
+    #[test]
+    fn asset_manifest_document_converts_from_manifest_in_deterministic_order() {
+        let manifest = AssetManifest::from_entries(vec![
+            manifest_entry(2, "res://assets/z.glb", "gltf").unwrap(),
+            manifest_entry(1, "res://assets/a.glb", "gltf").unwrap(),
+        ])
+        .unwrap();
+
+        let document = manifest.to_document();
+
+        assert_eq!(
+            document.entries,
+            vec![
+                AssetManifestEntryDocument::new(
+                    1,
+                    "res://assets/a.glb",
+                    "gltf",
+                    "1.0.0",
+                    "settings-hash"
+                ),
+                AssetManifestEntryDocument::new(
+                    2,
+                    "res://assets/z.glb",
+                    "gltf",
+                    "1.0.0",
+                    "settings-hash"
+                )
+            ]
+        );
+    }
+
+    #[test]
+    fn asset_manifest_document_round_trips_through_validated_manifest() {
+        let document = AssetManifestDocument::new(vec![
+            AssetManifestEntryDocument::new(
+                2,
+                "res://assets/models/tree.glb",
+                "gltf",
+                "1.0.0",
+                "hash-b",
+            ),
+            AssetManifestEntryDocument::new(
+                1,
+                "res://assets/audio/theme.ogg",
+                "audio",
+                "1.0.0",
+                "hash-a",
+            ),
+        ])
+        .unwrap();
+
+        let manifest = AssetManifest::from_document(document.clone()).unwrap();
+
+        assert_eq!(manifest.to_document(), document);
+        assert_eq!(
+            manifest.entries()[0].path().as_str(),
+            "res://assets/audio/theme.ogg"
+        );
+        assert_eq!(
+            manifest.entries()[1].path().as_str(),
+            "res://assets/models/tree.glb"
+        );
+    }
+
+    #[test]
+    fn asset_manifest_document_rejects_invalid_fields() {
+        assert_eq!(
+            AssetManifest::from_document(AssetManifestDocument {
+                entries: vec![AssetManifestEntryDocument::new(
+                    0,
+                    "res://assets/a.glb",
+                    "gltf",
+                    "1.0.0",
+                    "hash"
+                )]
+            })
+            .unwrap_err(),
+            ResourceError::InvalidAssetGuid { raw: 0 }
+        );
+
+        assert_eq!(
+            AssetManifest::from_document(AssetManifestDocument {
+                entries: vec![AssetManifestEntryDocument::new(
+                    1, "", "gltf", "1.0.0", "hash"
+                )]
+            })
+            .unwrap_err(),
+            ResourceError::EmptyAssetPath
+        );
+
+        assert_eq!(
+            AssetManifest::from_document(AssetManifestDocument {
+                entries: vec![AssetManifestEntryDocument::new(
+                    1,
+                    "res://assets/a.glb",
+                    "",
+                    "1.0.0",
+                    "hash"
+                )]
+            })
+            .unwrap_err(),
+            ResourceError::InvalidImporterMetadata {
+                field: "id",
+                value: String::new()
+            }
+        );
+    }
+
+    #[test]
+    fn asset_manifest_document_rejects_duplicate_identities_and_paths() {
+        assert_eq!(
+            AssetManifestDocument::new(vec![
+                AssetManifestEntryDocument::new(1, "res://assets/a.glb", "gltf", "1.0.0", "hash"),
+                AssetManifestEntryDocument::new(1, "res://assets/b.glb", "gltf", "1.0.0", "hash")
+            ])
+            .unwrap_err(),
+            ResourceError::DuplicateAssetGuid {
+                guid: AssetGuid::new(1)
+            }
+        );
+
+        assert_eq!(
+            AssetManifestDocument::new(vec![
+                AssetManifestEntryDocument::new(1, "res://assets/a.glb", "gltf", "1.0.0", "hash"),
+                AssetManifestEntryDocument::new(2, "res://assets/a.glb", "gltf", "1.0.0", "hash")
+            ])
+            .unwrap_err(),
+            ResourceError::DuplicateAssetPath {
+                path: AssetPath::new("res://assets/a.glb").unwrap()
+            }
+        );
     }
 
     #[test]
