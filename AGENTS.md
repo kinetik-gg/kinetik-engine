@@ -39,9 +39,49 @@ Kinetik work is issue-based and backlog-driven.
 - Architecture, public API, dependency, unsafe, serialized-format, and merge decisions remain human-supervised.
 - Reviewer/QA agents should attack patches before integration.
 - Integration happens only after checks pass and scope is confirmed.
+- After a PR is merged, agents must clean up their temporary worktree and delete
+  the issue branch both locally and on the remote. If a PR is squash-merged,
+  verify the PR is merged before deleting because Git may not report the branch
+  as merged by ancestry.
 
 Good issues are small enough for one focused agent and must use the task
 contract below.
+
+## Agent Autonomy and Escalation
+
+Agents may proceed without asking when all of these are true:
+
+- The issue is scoped and matches the roadmap or an approved planning issue.
+- The work is Level 0, Level 1, or Level 2.
+- The patch is focused, reviewable, and does not cross architecture boundaries.
+- No dependency is added or upgraded.
+- No public API is removed, renamed, or semantically changed.
+- No serialized source, generated format, migration, or golden fixture contract
+  is changed.
+- No `unsafe` is introduced, expanded, wrapped, or lint-suppressed.
+- Editor/runtime/project/command/MCP boundaries remain as documented.
+- Required tests/checks pass.
+
+Agents may also proceed on Level 3 issues when the relevant ADRs and internal
+API specs already define the cross-crate contract and the issue does not create
+new architecture direction.
+
+Agents must stop and ask for human approval when any of these apply:
+
+- New dependency, dependency feature, or dependency version.
+- Public API shape, naming, or compatibility change.
+- Serialized format, migration, golden fixture contract, or source file layout
+  change.
+- Unsafe Rust, FFI boundary, unsafe lint change, or wrapper over unsafe code.
+- Architecture decision not already covered by an accepted ADR/internal API
+  spec.
+- Editor behavior that would bypass engine/project/command/runtime APIs.
+- Runtime behavior that could mutate saved edit/project state directly.
+- Broad refactor mixed with feature work.
+- File growth that would knowingly create or worsen a god file.
+
+When escalation is needed, agents should present the options, recommend one,
+and wait for approval before implementation.
 
 ## ADR Usage
 
@@ -50,10 +90,13 @@ Agents must check relevant ADRs before changing architecture-sensitive areas.
 Do not bulk-read every ADR by default. Instead:
 
 1. Identify the task area.
-2. Search ADR titles and docs for relevant keywords.
-3. Read only the ADRs that could govern the task.
-4. Mention the relevant ADRs in the task response or PR notes.
-5. If the task conflicts with an accepted ADR, stop and ask for human direction.
+2. Check `docs/adr/README.md` for matching areas, keywords, and
+   "read before touching" guidance.
+3. Search ADR titles/docs for additional relevant keywords if the index is not
+   enough.
+4. Read only the ADRs that could govern the task.
+5. Mention the relevant ADRs in the task response or PR notes.
+6. If the task conflicts with an accepted ADR, stop and ask for human direction.
 
 Architecture-sensitive areas include:
 
@@ -110,6 +153,8 @@ Preferred verification order:
 
 MCP should become the primary semantic automation harness for editor and runtime
 work. Prefer MCP commands over pixel-level automation when both are available.
+MCP is not a blocker before the relevant MCP server/tools exist; use unit,
+integration, fixture, golden, and headless checks first.
 
 Useful MCP test capabilities should include:
 
