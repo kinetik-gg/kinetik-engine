@@ -2,8 +2,16 @@
 
 use core::fmt;
 
+use kinetik_core::{
+    Aabb, Color, Diagnostic, DiagnosticCode, DiagnosticLocation, DiagnosticSeverity,
+    DiagnosticSource, InstanceId, Quat, Rect, ResourceId, Transform, Vec2, Vec3, Vec4,
+};
+
 /// Result type for reflection descriptor operations.
 pub type ReflectResult<T> = Result<T, DescriptorError>;
+
+/// Result type for reflection value operations.
+pub type ValueResult<T> = Result<T, ValueError>;
 
 /// Errors returned when descriptor metadata violates the reflection contract.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,6 +32,15 @@ pub enum DescriptorError {
     EmptySerializationKey {
         /// Property path being described.
         path: String,
+    },
+    /// Explicit default value type did not match the descriptor type.
+    DefaultTypeMismatch {
+        /// Property path being described.
+        path: String,
+        /// Expected descriptor type.
+        expected: PropertyType,
+        /// Actual default value type.
+        actual: PropertyType,
     },
     /// A read-only editor property did not explain why it is locked.
     MissingReadOnlyReason {
@@ -51,6 +68,14 @@ impl fmt::Display for DescriptorError {
                     "property descriptor serialization key must not be empty: {path}"
                 )
             }
+            Self::DefaultTypeMismatch {
+                path,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "property descriptor default for {path} expected {expected}, got {actual}"
+            ),
             Self::MissingReadOnlyReason { path } => {
                 write!(f, "read-only property must include a reason: {path}")
             }
@@ -91,14 +116,221 @@ pub enum PropertyType {
     ResourceId,
 }
 
+impl fmt::Display for PropertyType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let type_name = match self {
+            Self::String => "String",
+            Self::Bool => "Bool",
+            Self::F32 => "F32",
+            Self::Vec2 => "Vec2",
+            Self::Vec3 => "Vec3",
+            Self::Vec4 => "Vec4",
+            Self::Quat => "Quat",
+            Self::Color => "Color",
+            Self::Transform => "Transform",
+            Self::Rect => "Rect",
+            Self::Aabb => "Aabb",
+            Self::InstanceId => "InstanceId",
+            Self::ResourceId => "ResourceId",
+        };
+        f.write_str(type_name)
+    }
+}
+
+/// Reflected property value container.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PropertyValue {
+    /// UTF-8 text.
+    String(String),
+    /// Boolean value.
+    Bool(bool),
+    /// 32-bit floating point number.
+    F32(f32),
+    /// 2D vector.
+    Vec2(Vec2),
+    /// 3D vector.
+    Vec3(Vec3),
+    /// 4D vector.
+    Vec4(Vec4),
+    /// Quaternion rotation.
+    Quat(Quat),
+    /// Linear RGBA color.
+    Color(Color),
+    /// Position, rotation, and scale transform.
+    Transform(Transform),
+    /// 2D rectangle.
+    Rect(Rect),
+    /// 3D axis-aligned bounding box.
+    Aabb(Aabb),
+    /// Runtime instance handle.
+    InstanceId(InstanceId),
+    /// Runtime resource handle.
+    ResourceId(ResourceId),
+}
+
+impl PropertyValue {
+    /// Creates a neutral default value for a reflected type when one exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ValueError::NoTypeDefault`] for handle-like types that do not
+    /// have a meaningful neutral value under the non-zero ID policy.
+    pub fn type_default(value_type: PropertyType) -> ValueResult<Self> {
+        let value = match value_type {
+            PropertyType::String => Self::String(String::new()),
+            PropertyType::Bool => Self::Bool(false),
+            PropertyType::F32 => Self::F32(0.0),
+            PropertyType::Vec2 => Self::Vec2(Vec2::default()),
+            PropertyType::Vec3 => Self::Vec3(Vec3::default()),
+            PropertyType::Vec4 => Self::Vec4(Vec4::default()),
+            PropertyType::Quat => Self::Quat(Quat::default()),
+            PropertyType::Color => Self::Color(Color::default()),
+            PropertyType::Transform => Self::Transform(Transform::default()),
+            PropertyType::Rect => Self::Rect(Rect::default()),
+            PropertyType::Aabb => Self::Aabb(Aabb::default()),
+            PropertyType::InstanceId | PropertyType::ResourceId => {
+                return Err(ValueError::NoTypeDefault { value_type });
+            }
+        };
+        Ok(value)
+    }
+
+    /// Returns the reflected type of this value.
+    #[must_use]
+    pub const fn property_type(&self) -> PropertyType {
+        match self {
+            Self::String(_) => PropertyType::String,
+            Self::Bool(_) => PropertyType::Bool,
+            Self::F32(_) => PropertyType::F32,
+            Self::Vec2(_) => PropertyType::Vec2,
+            Self::Vec3(_) => PropertyType::Vec3,
+            Self::Vec4(_) => PropertyType::Vec4,
+            Self::Quat(_) => PropertyType::Quat,
+            Self::Color(_) => PropertyType::Color,
+            Self::Transform(_) => PropertyType::Transform,
+            Self::Rect(_) => PropertyType::Rect,
+            Self::Aabb(_) => PropertyType::Aabb,
+            Self::InstanceId(_) => PropertyType::InstanceId,
+            Self::ResourceId(_) => PropertyType::ResourceId,
+        }
+    }
+
+    /// Returns whether this value's type matches the descriptor's type.
+    #[must_use]
+    pub fn is_compatible_with(&self, descriptor: &PropertyDescriptor) -> bool {
+        self.property_type() == descriptor.value_type
+    }
+
+    /// Validates this value against a property descriptor.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ValueError`] when the descriptor itself is invalid or the value
+    /// type does not match the descriptor's reflected type.
+    pub fn validate_for_descriptor(&self, descriptor: &PropertyDescriptor) -> ValueResult<()> {
+        descriptor
+            .validate()
+            .map_err(ValueError::InvalidDescriptor)?;
+        if self.is_compatible_with(descriptor) {
+            return Ok(());
+        }
+        Err(ValueError::TypeMismatch {
+            path: descriptor.path.clone(),
+            expected: descriptor.value_type,
+            actual: self.property_type(),
+        })
+    }
+}
+
+/// Errors returned when reflected values violate descriptor contracts.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ValueError {
+    /// Descriptor validation failed before value validation.
+    InvalidDescriptor(DescriptorError),
+    /// Reflected type has no meaningful neutral default value.
+    NoTypeDefault {
+        /// Reflected type without a neutral default.
+        value_type: PropertyType,
+    },
+    /// Value type did not match the descriptor type.
+    TypeMismatch {
+        /// Canonical property path.
+        path: String,
+        /// Expected descriptor type.
+        expected: PropertyType,
+        /// Actual value type.
+        actual: PropertyType,
+    },
+}
+
+impl ValueError {
+    /// Stable diagnostic code for invalid descriptors during value validation.
+    pub const INVALID_DESCRIPTOR_CODE: DiagnosticCode =
+        DiagnosticCode::new("KT_REFLECT_INVALID_DESCRIPTOR");
+
+    /// Stable diagnostic code for missing reflected type defaults.
+    pub const NO_TYPE_DEFAULT_CODE: DiagnosticCode =
+        DiagnosticCode::new("KT_REFLECT_NO_TYPE_DEFAULT");
+
+    /// Stable diagnostic code for reflected value type mismatches.
+    pub const TYPE_MISMATCH_CODE: DiagnosticCode = DiagnosticCode::new("KT_REFLECT_TYPE_MISMATCH");
+
+    /// Returns the stable diagnostic code for this value error.
+    #[must_use]
+    pub const fn diagnostic_code(&self) -> DiagnosticCode {
+        match self {
+            Self::InvalidDescriptor(_) => Self::INVALID_DESCRIPTOR_CODE,
+            Self::NoTypeDefault { .. } => Self::NO_TYPE_DEFAULT_CODE,
+            Self::TypeMismatch { .. } => Self::TYPE_MISMATCH_CODE,
+        }
+    }
+
+    /// Converts this error into a structured diagnostic.
+    #[must_use]
+    pub fn to_diagnostic(&self) -> Diagnostic {
+        let mut location = DiagnosticLocation::new();
+        if let Self::TypeMismatch { path, .. } = self {
+            location.property_path = Some(path.clone());
+        }
+        Diagnostic::new(
+            self.diagnostic_code(),
+            DiagnosticSeverity::Error,
+            DiagnosticSource::new("Reflection"),
+            self.to_string(),
+        )
+        .with_location(location)
+    }
+}
+
+impl fmt::Display for ValueError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidDescriptor(error) => write!(f, "invalid property descriptor: {error}"),
+            Self::NoTypeDefault { value_type } => {
+                write!(f, "reflected type has no neutral default: {value_type}")
+            }
+            Self::TypeMismatch {
+                path,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "property {path} expected value type {expected}, got {actual}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ValueError {}
+
 /// Descriptor-level default value policy.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub enum PropertyDefault {
     /// Use the reflected type's neutral default.
     #[default]
     TypeDefault,
-    /// Preserve an explicit literal for future parsing by the value container.
-    Literal(String),
+    /// Use an explicit reflected value.
+    Value(PropertyValue),
 }
 
 /// Inspector and automation presentation hint.
@@ -366,6 +598,16 @@ impl PropertyDescriptor {
                 path: self.path.clone(),
             });
         }
+        if let PropertyDefault::Value(value) = &self.default_value {
+            let actual = value.property_type();
+            if actual != self.value_type {
+                return Err(DescriptorError::DefaultTypeMismatch {
+                    path: self.path.clone(),
+                    expected: self.value_type,
+                    actual,
+                });
+            }
+        }
         if self.editor_editability == EditorEditability::ReadOnly
             && self
                 .read_only_reason
@@ -455,7 +697,7 @@ mod tests {
         let descriptor =
             PropertyDescriptor::new("Transform.Position", "Position", PropertyType::Vec3)
                 .unwrap()
-                .with_default_value(PropertyDefault::Literal("0,0,0".to_owned()))
+                .with_default_value(PropertyDefault::Value(PropertyValue::Vec3(Vec3::ZERO)))
                 .with_editor_hint(EditorHint::FreeNumber)
                 .with_validation_rules(vec![ValidationRule::Required])
                 .with_documentation("Local position.");
@@ -465,7 +707,7 @@ mod tests {
         assert_eq!(descriptor.value_type, PropertyType::Vec3);
         assert_eq!(
             descriptor.default_value,
-            PropertyDefault::Literal("0,0,0".to_owned())
+            PropertyDefault::Value(PropertyValue::Vec3(Vec3::ZERO))
         );
         assert_eq!(descriptor.serialization_key, "Transform.Position");
         assert!(descriptor.is_serialized());
@@ -526,6 +768,137 @@ mod tests {
             DescriptorError::EmptySerializationKey {
                 path: "Name".to_owned()
             }
+        );
+        assert_eq!(
+            PropertyDescriptor::new("Transform.Position", "Position", PropertyType::Vec3)
+                .unwrap()
+                .with_default_value(PropertyDefault::Value(PropertyValue::String(
+                    "wrong".to_owned()
+                )))
+                .validate()
+                .unwrap_err(),
+            DescriptorError::DefaultTypeMismatch {
+                path: "Transform.Position".to_owned(),
+                expected: PropertyType::Vec3,
+                actual: PropertyType::String
+            }
+        );
+    }
+
+    #[test]
+    fn property_values_report_reflected_types() {
+        assert_eq!(
+            PropertyValue::String("Avala".to_owned()).property_type(),
+            PropertyType::String
+        );
+        assert_eq!(
+            PropertyValue::Bool(true).property_type(),
+            PropertyType::Bool
+        );
+        assert_eq!(PropertyValue::F32(1.5).property_type(), PropertyType::F32);
+        assert_eq!(
+            PropertyValue::Vec2(Vec2::new(1.0, 2.0)).property_type(),
+            PropertyType::Vec2
+        );
+        assert_eq!(
+            PropertyValue::Vec3(Vec3::new(1.0, 2.0, 3.0)).property_type(),
+            PropertyType::Vec3
+        );
+        assert_eq!(
+            PropertyValue::Vec4(Vec4::new(1.0, 2.0, 3.0, 4.0)).property_type(),
+            PropertyType::Vec4
+        );
+        assert_eq!(
+            PropertyValue::Quat(Quat::IDENTITY).property_type(),
+            PropertyType::Quat
+        );
+        assert_eq!(
+            PropertyValue::Color(Color::WHITE).property_type(),
+            PropertyType::Color
+        );
+        assert_eq!(
+            PropertyValue::Transform(Transform::IDENTITY).property_type(),
+            PropertyType::Transform
+        );
+        assert_eq!(
+            PropertyValue::Rect(Rect::ZERO).property_type(),
+            PropertyType::Rect
+        );
+        assert_eq!(
+            PropertyValue::Aabb(Aabb::ZERO).property_type(),
+            PropertyType::Aabb
+        );
+        assert_eq!(
+            PropertyValue::InstanceId(InstanceId::new(1)).property_type(),
+            PropertyType::InstanceId
+        );
+        assert_eq!(
+            PropertyValue::ResourceId(ResourceId::new(1)).property_type(),
+            PropertyType::ResourceId
+        );
+    }
+
+    #[test]
+    fn property_values_validate_against_descriptors() {
+        let descriptor =
+            PropertyDescriptor::new("Transform.Position", "Position", PropertyType::Vec3).unwrap();
+        let value = PropertyValue::Vec3(Vec3::new(1.0, 2.0, 3.0));
+
+        assert!(value.is_compatible_with(&descriptor));
+        value.validate_for_descriptor(&descriptor).unwrap();
+
+        let mismatch = PropertyValue::String("wrong".to_owned())
+            .validate_for_descriptor(&descriptor)
+            .unwrap_err();
+
+        assert_eq!(
+            mismatch,
+            ValueError::TypeMismatch {
+                path: "Transform.Position".to_owned(),
+                expected: PropertyType::Vec3,
+                actual: PropertyType::String
+            }
+        );
+        assert_eq!(mismatch.diagnostic_code(), ValueError::TYPE_MISMATCH_CODE);
+        let diagnostic = mismatch.to_diagnostic();
+        assert_eq!(diagnostic.code, ValueError::TYPE_MISMATCH_CODE);
+        assert_eq!(diagnostic.source.as_str(), "Reflection");
+        assert_eq!(
+            diagnostic.location.property_path.as_deref(),
+            Some("Transform.Position")
+        );
+    }
+
+    #[test]
+    fn property_value_defaults_are_type_aware() {
+        assert_eq!(
+            PropertyValue::type_default(PropertyType::Transform).unwrap(),
+            PropertyValue::Transform(Transform::IDENTITY)
+        );
+        assert_eq!(
+            PropertyValue::type_default(PropertyType::Color).unwrap(),
+            PropertyValue::Color(Color::WHITE)
+        );
+        assert_eq!(
+            PropertyValue::type_default(PropertyType::InstanceId).unwrap_err(),
+            ValueError::NoTypeDefault {
+                value_type: PropertyType::InstanceId
+            }
+        );
+    }
+
+    #[test]
+    fn value_validation_rejects_invalid_descriptor_paths() {
+        let mut descriptor = PropertyDescriptor::new("Name", "Name", PropertyType::String).unwrap();
+        descriptor.path = "name".to_owned();
+
+        assert_eq!(
+            PropertyValue::String("Workspace".to_owned())
+                .validate_for_descriptor(&descriptor)
+                .unwrap_err(),
+            ValueError::InvalidDescriptor(DescriptorError::InvalidPath {
+                path: "name".to_owned()
+            })
         );
     }
 }
