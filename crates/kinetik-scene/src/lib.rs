@@ -3,7 +3,7 @@
 use core::fmt;
 use std::collections::{BTreeMap, BTreeSet};
 
-use kinetik_core::{InstanceGuid, InstanceId, Quat, Transform, Vec3};
+use kinetik_core::{Aabb, InstanceGuid, InstanceId, Quat, Transform, Vec3};
 use kinetik_reflect::{
     EditorHint, PropertyDefault, PropertyDescriptor, PropertyType, PropertyValue, ValueError,
 };
@@ -26,6 +26,10 @@ pub const DEFAULT_SERVICE_CLASS_NAMES: [&str; 9] = [
 
 /// Approved M7 built-in 3D class names registered after default services.
 pub const BUILT_IN_3D_CLASS_NAMES: [&str; 5] = ["Folder", "Node3D", "Part", "Camera3D", "Light3D"];
+
+/// Approved M7 local bounds for `Part`.
+pub const PART_LOCAL_BOUNDS: Aabb =
+    Aabb::new(Vec3::new(-0.5, -0.5, -0.5), Vec3::new(0.5, 0.5, 0.5));
 
 /// Class-level capabilities used by authoring, validation, and later systems.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -399,6 +403,13 @@ pub enum SceneError {
         /// Registered instance class name.
         class_name: String,
     },
+    /// Bounds were requested for a class that does not produce concrete bounds.
+    NoBounds {
+        /// Runtime instance ID.
+        id: InstanceId,
+        /// Registered instance class name.
+        class_name: String,
+    },
 }
 
 impl fmt::Display for SceneError {
@@ -471,6 +482,12 @@ impl fmt::Display for SceneError {
                 f,
                 "instance {id} of class {class_name} does not have spatial transform properties"
             ),
+            Self::NoBounds { id, class_name } => {
+                write!(
+                    f,
+                    "instance {id} of class {class_name} does not have bounds"
+                )
+            }
         }
     }
 }
@@ -927,6 +944,38 @@ impl Scene {
             }
         }
         Ok(transform)
+    }
+
+    /// Returns approved local bounds for a bounded instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SceneError::NoBounds`] when the instance class has no concrete
+    /// authoring bounds in the current M7 contract.
+    pub fn local_bounds(&self, id: InstanceId) -> SceneResult<Aabb> {
+        let instance = self.get(id)?;
+        match instance.class_name.as_str() {
+            "Part" => Ok(PART_LOCAL_BOUNDS),
+            _ => Err(SceneError::NoBounds {
+                id,
+                class_name: instance.class_name.clone(),
+            }),
+        }
+    }
+
+    /// Returns deterministic world bounds for a bounded instance.
+    ///
+    /// World bounds transform all eight local AABB corners through the
+    /// instance world transform and take the resulting min/max.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SceneError`] when bounds or world transform derivation fails.
+    pub fn world_bounds(&self, id: InstanceId) -> SceneResult<Aabb> {
+        Ok(transform_aabb(
+            self.local_bounds(id)?,
+            self.world_transform(id)?,
+        ))
     }
 
     /// Returns a reflected property value for an instance.
@@ -1524,8 +1573,58 @@ fn compose_transform(parent: Transform, local: Transform) -> Transform {
     )
 }
 
+fn transform_aabb(bounds: Aabb, transform: Transform) -> Aabb {
+    let corners = aabb_corners(bounds);
+    let mut min = transform_point(transform, corners[0]);
+    let mut max = min;
+
+    for corner in corners.into_iter().skip(1) {
+        let point = transform_point(transform, corner);
+        min = min_vec3(min, point);
+        max = max_vec3(max, point);
+    }
+
+    Aabb::new(min, max)
+}
+
+fn aabb_corners(bounds: Aabb) -> [Vec3; 8] {
+    [
+        Vec3::new(bounds.min.x, bounds.min.y, bounds.min.z),
+        Vec3::new(bounds.min.x, bounds.min.y, bounds.max.z),
+        Vec3::new(bounds.min.x, bounds.max.y, bounds.min.z),
+        Vec3::new(bounds.min.x, bounds.max.y, bounds.max.z),
+        Vec3::new(bounds.max.x, bounds.min.y, bounds.min.z),
+        Vec3::new(bounds.max.x, bounds.min.y, bounds.max.z),
+        Vec3::new(bounds.max.x, bounds.max.y, bounds.min.z),
+        Vec3::new(bounds.max.x, bounds.max.y, bounds.max.z),
+    ]
+}
+
+fn transform_point(transform: Transform, point: Vec3) -> Vec3 {
+    add_vec3(
+        transform.position,
+        rotate_vec3(transform.rotation, mul_vec3(transform.scale, point)),
+    )
+}
+
 fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
     Vec3::new(left.x + right.x, left.y + right.y, left.z + right.z)
+}
+
+fn min_vec3(left: Vec3, right: Vec3) -> Vec3 {
+    Vec3::new(
+        left.x.min(right.x),
+        left.y.min(right.y),
+        left.z.min(right.z),
+    )
+}
+
+fn max_vec3(left: Vec3, right: Vec3) -> Vec3 {
+    Vec3::new(
+        left.x.max(right.x),
+        left.y.max(right.y),
+        left.z.max(right.z),
+    )
 }
 
 fn mul_vec3(left: Vec3, right: Vec3) -> Vec3 {
@@ -2105,6 +2204,101 @@ mod tests {
         delete.delete(part);
         scene.apply_mutations(delete).unwrap();
         assert_eq!(scene.transform_revision(), revision + 2);
+    }
+
+    #[test]
+    fn local_bounds_follow_approved_part_unit_cube_contract() {
+        let mut scene = Scene::new();
+        let part = scene.add_root("Part", "Block").unwrap();
+
+        assert_eq!(scene.local_bounds(part).unwrap(), PART_LOCAL_BOUNDS);
+        assert_eq!(PART_LOCAL_BOUNDS.size(), kinetik_core::Vec3::ONE);
+        assert_eq!(PART_LOCAL_BOUNDS.center(), kinetik_core::Vec3::ZERO);
+    }
+
+    #[test]
+    fn world_bounds_transform_all_local_part_corners() {
+        let mut scene = Scene::new();
+        let game = scene.add_root(ROOT_CLASS_NAME, "Game").unwrap();
+        let parent = scene.add_child(game, "Node3D", "Parent").unwrap();
+        let part = scene.add_child(parent, "Part", "Block").unwrap();
+
+        scene
+            .set_property(
+                parent,
+                "Transform.Position",
+                PropertyValue::Vec3(kinetik_core::Vec3::new(10.0, 0.0, 0.0)),
+            )
+            .unwrap();
+        scene
+            .set_property(
+                parent,
+                "Transform.Rotation",
+                PropertyValue::Quat(kinetik_core::Quat::new(0.0, 0.0, 1.0, 0.0)),
+            )
+            .unwrap();
+        scene
+            .set_property(
+                parent,
+                "Transform.Scale",
+                PropertyValue::Vec3(kinetik_core::Vec3::new(2.0, 1.0, 1.0)),
+            )
+            .unwrap();
+        scene
+            .set_property(
+                part,
+                "Transform.Position",
+                PropertyValue::Vec3(kinetik_core::Vec3::X),
+            )
+            .unwrap();
+        scene
+            .set_property(
+                part,
+                "Transform.Scale",
+                PropertyValue::Vec3(kinetik_core::Vec3::new(3.0, 4.0, 5.0)),
+            )
+            .unwrap();
+
+        assert_eq!(
+            scene.world_bounds(part).unwrap(),
+            kinetik_core::Aabb::new(
+                kinetik_core::Vec3::new(5.0, -2.0, -2.5),
+                kinetik_core::Vec3::new(11.0, 2.0, 2.5)
+            )
+        );
+    }
+
+    #[test]
+    fn bounds_queries_report_no_bounds_for_non_bounded_classes() {
+        let mut scene = Scene::new();
+        let game = scene.add_root(ROOT_CLASS_NAME, "Game").unwrap();
+        let folder = scene.add_child(game, "Folder", "Folder").unwrap();
+        let node = scene.add_child(folder, "Node3D", "Node").unwrap();
+        let camera = scene.add_child(node, "Camera3D", "Camera").unwrap();
+        let light = scene.add_child(node, "Light3D", "Light").unwrap();
+
+        for (id, class_name) in [
+            (game, ROOT_CLASS_NAME),
+            (folder, "Folder"),
+            (node, "Node3D"),
+            (camera, "Camera3D"),
+            (light, "Light3D"),
+        ] {
+            assert_eq!(
+                scene.local_bounds(id).unwrap_err(),
+                SceneError::NoBounds {
+                    id,
+                    class_name: class_name.to_owned()
+                }
+            );
+            assert_eq!(
+                scene.world_bounds(id).unwrap_err(),
+                SceneError::NoBounds {
+                    id,
+                    class_name: class_name.to_owned()
+                }
+            );
+        }
     }
 
     #[test]
