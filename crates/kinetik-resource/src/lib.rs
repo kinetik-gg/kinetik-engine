@@ -45,6 +45,11 @@ pub enum ResourceError {
         /// Invalid field value.
         value: String,
     },
+    /// Project layout validation found missing required paths.
+    MissingProjectPaths {
+        /// Missing workspace-relative paths.
+        paths: Vec<String>,
+    },
 }
 
 impl ResourceError {
@@ -64,6 +69,10 @@ impl ResourceError {
     pub const INVALID_IMPORTER_METADATA_CODE: DiagnosticCode =
         DiagnosticCode::new("KT_RESOURCE_INVALID_IMPORTER_METADATA");
 
+    /// Stable diagnostic code for missing project layout paths.
+    pub const MISSING_PROJECT_PATHS_CODE: DiagnosticCode =
+        DiagnosticCode::new("KT_RESOURCE_MISSING_PROJECT_PATHS");
+
     /// Diagnostic source for resource-owned validation.
     pub const RESOURCE_SOURCE: DiagnosticSource = DiagnosticSource::new("Resource");
 
@@ -77,6 +86,7 @@ impl ResourceError {
                 Self::DUPLICATE_ASSET_ENTRY_CODE
             }
             Self::InvalidImporterMetadata { .. } => Self::INVALID_IMPORTER_METADATA_CODE,
+            Self::MissingProjectPaths { .. } => Self::MISSING_PROJECT_PATHS_CODE,
         }
     }
 
@@ -91,13 +101,17 @@ impl ResourceError {
             }
             _ => {}
         }
+        let blocking = match self {
+            Self::MissingProjectPaths { .. } => DiagnosticBlockingScope::Build,
+            _ => DiagnosticBlockingScope::Import,
+        };
         Diagnostic::new(
             self.diagnostic_code(),
             DiagnosticSeverity::Error,
             Self::RESOURCE_SOURCE,
             self.to_string(),
         )
-        .with_blocking_scope(DiagnosticBlockingScope::Import)
+        .with_blocking_scope(blocking)
         .with_location(location)
     }
 }
@@ -120,6 +134,16 @@ impl fmt::Display for ResourceError {
             }
             Self::InvalidImporterMetadata { field, value } => {
                 write!(f, "asset manifest importer {field} is invalid: {value}")
+            }
+            Self::MissingProjectPaths { paths } => {
+                write!(f, "project layout is missing required paths: ")?;
+                for (index, path) in paths.iter().enumerate() {
+                    if index > 0 {
+                        f.write_str(", ")?;
+                    }
+                    f.write_str(path)?;
+                }
+                Ok(())
             }
         }
     }
@@ -461,6 +485,215 @@ impl AssetManifest {
     }
 }
 
+/// Logical purpose of a canonical project workspace path.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum ProjectPathKind {
+    /// Project settings file.
+    ProjectSettings,
+    /// Scene source directory.
+    ScenesDirectory,
+    /// Default scene source file.
+    MainScene,
+    /// Prefab source directory.
+    PrefabsDirectory,
+    /// Script source directory.
+    ScriptsDirectory,
+    /// Source asset directory.
+    AssetsDirectory,
+    /// Stable metadata directory.
+    ProjectMetadataDirectory,
+    /// Asset manifest file.
+    AssetsManifest,
+    /// Instance manifest file.
+    InstancesManifest,
+    /// Generated Kinetik directory.
+    KinetikDirectory,
+    /// Generated cache directory.
+    CacheDirectory,
+    /// Generated import-output directory.
+    ImportDirectory,
+    /// Generated build-output directory.
+    BuildDirectory,
+}
+
+/// Whether a project layout path is committed source or disposable generated output.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum ProjectPathDomain {
+    /// Source-controlled project path.
+    Source,
+    /// Generated disposable path under `.kinetik/`.
+    Generated,
+}
+
+/// Canonical workspace-relative project path.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ProjectLayoutPath {
+    /// Logical path kind.
+    pub kind: ProjectPathKind,
+    /// Workspace-relative path using `/` separators.
+    pub path: &'static str,
+    /// Source or generated path domain.
+    pub domain: ProjectPathDomain,
+}
+
+impl ProjectLayoutPath {
+    /// Returns whether this path is required for source project validation.
+    #[must_use]
+    pub const fn is_required_source(self) -> bool {
+        matches!(self.domain, ProjectPathDomain::Source)
+    }
+}
+
+/// In-memory model of the default Kinetik project workspace layout.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectLayout {
+    paths: Vec<ProjectLayoutPath>,
+}
+
+impl ProjectLayout {
+    /// Creates the default Kinetik project layout model.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            paths: DEFAULT_PROJECT_LAYOUT_PATHS.to_vec(),
+        }
+    }
+
+    /// Returns all scaffold paths in deterministic order.
+    #[must_use]
+    pub fn scaffold_paths(&self) -> &[ProjectLayoutPath] {
+        &self.paths
+    }
+
+    /// Returns source-controlled paths required for project validation.
+    #[must_use]
+    pub fn required_source_paths(&self) -> Vec<ProjectLayoutPath> {
+        self.paths
+            .iter()
+            .copied()
+            .filter(|path| path.is_required_source())
+            .collect()
+    }
+
+    /// Returns a canonical path by logical kind.
+    #[must_use]
+    pub fn path(&self, kind: ProjectPathKind) -> Option<&'static str> {
+        self.paths
+            .iter()
+            .find(|path| path.kind == kind)
+            .map(|path| path.path)
+    }
+
+    /// Validates that a caller-provided path set contains every required source path.
+    ///
+    /// Generated `.kinetik/` paths are intentionally excluded because they are
+    /// disposable and can be rebuilt.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResourceError::MissingProjectPaths`] with all missing paths in
+    /// deterministic layout order.
+    pub fn validate_required_paths<I, P>(&self, paths: I) -> ResourceResult<()>
+    where
+        I: IntoIterator<Item = P>,
+        P: AsRef<str>,
+    {
+        let present_paths: BTreeSet<String> = paths
+            .into_iter()
+            .map(|path| normalize_project_path(path.as_ref()))
+            .collect();
+        let missing_paths: Vec<String> = self
+            .required_source_paths()
+            .into_iter()
+            .map(|path| path.path)
+            .filter(|path| !present_paths.contains(*path))
+            .map(str::to_owned)
+            .collect();
+
+        if missing_paths.is_empty() {
+            Ok(())
+        } else {
+            Err(ResourceError::MissingProjectPaths {
+                paths: missing_paths,
+            })
+        }
+    }
+}
+
+impl Default for ProjectLayout {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+const DEFAULT_PROJECT_LAYOUT_PATHS: [ProjectLayoutPath; 13] = [
+    ProjectLayoutPath {
+        kind: ProjectPathKind::ProjectSettings,
+        path: "Kinetik.toml",
+        domain: ProjectPathDomain::Source,
+    },
+    ProjectLayoutPath {
+        kind: ProjectPathKind::ScenesDirectory,
+        path: "scenes",
+        domain: ProjectPathDomain::Source,
+    },
+    ProjectLayoutPath {
+        kind: ProjectPathKind::MainScene,
+        path: "scenes/main.ktscene",
+        domain: ProjectPathDomain::Source,
+    },
+    ProjectLayoutPath {
+        kind: ProjectPathKind::PrefabsDirectory,
+        path: "prefabs",
+        domain: ProjectPathDomain::Source,
+    },
+    ProjectLayoutPath {
+        kind: ProjectPathKind::ScriptsDirectory,
+        path: "scripts",
+        domain: ProjectPathDomain::Source,
+    },
+    ProjectLayoutPath {
+        kind: ProjectPathKind::AssetsDirectory,
+        path: "assets",
+        domain: ProjectPathDomain::Source,
+    },
+    ProjectLayoutPath {
+        kind: ProjectPathKind::ProjectMetadataDirectory,
+        path: "project",
+        domain: ProjectPathDomain::Source,
+    },
+    ProjectLayoutPath {
+        kind: ProjectPathKind::AssetsManifest,
+        path: "project/assets.ktmanifest",
+        domain: ProjectPathDomain::Source,
+    },
+    ProjectLayoutPath {
+        kind: ProjectPathKind::InstancesManifest,
+        path: "project/instances.ktmanifest",
+        domain: ProjectPathDomain::Source,
+    },
+    ProjectLayoutPath {
+        kind: ProjectPathKind::KinetikDirectory,
+        path: ".kinetik",
+        domain: ProjectPathDomain::Generated,
+    },
+    ProjectLayoutPath {
+        kind: ProjectPathKind::CacheDirectory,
+        path: ".kinetik/cache",
+        domain: ProjectPathDomain::Generated,
+    },
+    ProjectLayoutPath {
+        kind: ProjectPathKind::ImportDirectory,
+        path: ".kinetik/import",
+        domain: ProjectPathDomain::Generated,
+    },
+    ProjectLayoutPath {
+        kind: ProjectPathKind::BuildDirectory,
+        path: ".kinetik/build",
+        domain: ProjectPathDomain::Generated,
+    },
+];
+
 /// Typed resource handle.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ResourceHandle {
@@ -556,6 +789,10 @@ fn validate_importer_field(field: &'static str, value: &str) -> ResourceResult<(
         });
     }
     Ok(())
+}
+
+fn normalize_project_path(path: &str) -> String {
+    path.trim_end_matches('/').replace('\\', "/")
 }
 
 #[cfg(test)]
@@ -828,5 +1065,117 @@ mod tests {
             diagnostic.location.asset_path.as_deref(),
             Some("res://assets/a.glb")
         );
+    }
+
+    #[test]
+    fn project_layout_lists_default_scaffold_paths_in_order() {
+        let layout = ProjectLayout::new();
+        let paths: Vec<&str> = layout
+            .scaffold_paths()
+            .iter()
+            .map(|path| path.path)
+            .collect();
+
+        assert_eq!(
+            paths,
+            vec![
+                "Kinetik.toml",
+                "scenes",
+                "scenes/main.ktscene",
+                "prefabs",
+                "scripts",
+                "assets",
+                "project",
+                "project/assets.ktmanifest",
+                "project/instances.ktmanifest",
+                ".kinetik",
+                ".kinetik/cache",
+                ".kinetik/import",
+                ".kinetik/build"
+            ]
+        );
+        assert_eq!(
+            layout.path(ProjectPathKind::AssetsManifest),
+            Some("project/assets.ktmanifest")
+        );
+    }
+
+    #[test]
+    fn project_layout_separates_required_source_from_generated_paths() {
+        let layout = ProjectLayout::new();
+        let required_paths: Vec<&str> = layout
+            .required_source_paths()
+            .iter()
+            .map(|path| path.path)
+            .collect();
+
+        assert_eq!(
+            required_paths,
+            vec![
+                "Kinetik.toml",
+                "scenes",
+                "scenes/main.ktscene",
+                "prefabs",
+                "scripts",
+                "assets",
+                "project",
+                "project/assets.ktmanifest",
+                "project/instances.ktmanifest"
+            ]
+        );
+        assert!(
+            layout
+                .scaffold_paths()
+                .iter()
+                .find(|path| path.path == ".kinetik/cache")
+                .unwrap()
+                .domain
+                == ProjectPathDomain::Generated
+        );
+    }
+
+    #[test]
+    fn project_layout_validates_required_paths_without_requiring_generated_output() {
+        let layout = ProjectLayout::new();
+        let present_paths = [
+            "Kinetik.toml",
+            "scenes/",
+            "scenes/main.ktscene",
+            "prefabs",
+            "scripts",
+            "assets",
+            "project",
+            "project/assets.ktmanifest",
+            "project/instances.ktmanifest",
+        ];
+
+        layout.validate_required_paths(present_paths).unwrap();
+    }
+
+    #[test]
+    fn project_layout_reports_missing_paths_in_deterministic_order() {
+        let layout = ProjectLayout::new();
+        let error = layout
+            .validate_required_paths(["Kinetik.toml", "assets", ".kinetik/cache"])
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            ResourceError::MissingProjectPaths {
+                paths: vec![
+                    "scenes".to_owned(),
+                    "scenes/main.ktscene".to_owned(),
+                    "prefabs".to_owned(),
+                    "scripts".to_owned(),
+                    "project".to_owned(),
+                    "project/assets.ktmanifest".to_owned(),
+                    "project/instances.ktmanifest".to_owned()
+                ]
+            }
+        );
+
+        let diagnostic = error.to_diagnostic();
+        assert_eq!(diagnostic.code, ResourceError::MISSING_PROJECT_PATHS_CODE);
+        assert_eq!(diagnostic.blocking, Some(DiagnosticBlockingScope::Build));
     }
 }
