@@ -1,8 +1,12 @@
 //! Runtime app loop and world orchestration contracts for Kinetik.
 
+mod diagnostics;
 mod frame;
 mod runtime_world;
 
+pub use diagnostics::{
+    RuntimeAttribution, RuntimeDiagnosticRecord, RuntimeLogLevel, RuntimeLogRecord,
+};
 pub use frame::{FramePhase, FrameScheduler, FrameStepRecord, FrameStepResult};
 pub use runtime_world::{
     RuntimeInstanceId, RuntimeInstanceRecord, RuntimeWorld, RuntimeWorldError, RuntimeWorldId,
