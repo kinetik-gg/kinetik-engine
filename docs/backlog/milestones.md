@@ -114,134 +114,67 @@ Representative issues:
 
 ## M4: Engine Dependency Surveys
 
-Goal: review dependency choices deeply enough that later engine and editor work
-has explicit crate ownership, safety boundaries, and public API constraints.
+Goal: review dependency choices before implementation crates add external
+libraries or shape public APIs around them.
 
 Key outputs:
 
+- Surveys/proposals for core utilities, runtime/app, renderer, editor/window/UI,
+  physics, asset import, and Luau.
+- Explicit crate ownership, license/safety review, transitive-risk notes, unsafe
+  exposure, platform support, build impact, and public API boundary guidance.
 - Serialization dependency proposal completed or updated for `serde`, TOML, and
   RON.
-- Core utility survey covering math, durable identity, arenas/slot maps, error
-  helpers, hashing, and whether external types may appear in public APIs.
-- Runtime/app survey covering event loop, time/clock, input boundary, and async
-  policy.
-- Renderer survey covering `wgpu`, shader tooling, image/texture loading, and
-  render API boundaries.
-- Editor/window/UI survey covering `winit`, Vello, text/layout, accessibility,
-  and screenshot/test harness needs.
-- Physics survey covering Rapier ownership and Kinetik-facing physics types.
-- Asset import survey covering glTF/GLB, image formats, content hashing,
-  importer versioning, and deterministic cache keys.
-- Luau survey covering embedding strategy, VM ownership, sandboxing, typed
-  bindings, and generated definitions.
 
-Representative issues:
-
-- Core dependency survey.
-- Runtime/app dependency survey.
-- Renderer dependency proposal.
-- Editor/window/UI dependency proposal.
-- Physics dependency proposal.
-- Asset import dependency proposal.
-- Luau dependency proposal.
+Representative issues: core dependency survey; renderer dependency proposal;
+editor/window/UI dependency proposal; physics, asset import, and Luau dependency
+proposals.
 
 Implementation level: Level 0.
-
-Required tests/checks:
-
-- Relevant docs/ADR consistency checks.
-- `cargo fmt --check` if dependency proposal files or generated tables are
-  touched.
-
-Human verification:
-
-- Approve dependency additions separately before implementation issues install
-  crates.
+Required tests/checks: docs/ADR consistency checks.
+Human verification: approve dependencies separately before installation.
 
 ## M5: Internal API Contract Specs
 
-Goal: define internal contracts before runtime, editor, MCP, and template agents
-depend on behavior that has not been designed.
+Goal: define internal contracts before agents implement runtime, editor, MCP, or
+template behavior that depends on them.
 
 Key outputs:
 
-- `Project` API spec for create/open/save, project metadata, active scenes,
-  manifests, diagnostics, and path policy.
-- `Scene` API spec for identity, class registry, hierarchy, properties,
-  structural changes, serialized document conversion, and validation.
-- `Reflection` API spec for descriptors, validation, editor hints,
-  serialization mapping, scriptability, and play-mode mutability.
-- `DiagnosticsStore` API spec for current-health diagnostics, logs, filtering,
-  blocking scopes, repairability, and lifecycle.
-- `Command` / `ChangeRecord` API spec for validation, execution, undo/redo,
-  dirty-state explanation, and semantic diffs.
-- `RuntimeWorld` API spec for edit-world cloning, play-world identity,
-  runtime-only spawned instances, and teardown.
-- `FrameScheduler` API spec for variable update, fixed update, deterministic
-  event flush points, and safe structural-change sync points.
-- `ResourceDatabase` API spec for manifest lookup, resource references, missing
-  asset diagnostics, import cache state, and dependency lookup.
-- `EditorSession` API spec for active project, active scene, selection, panels,
-  document dirty state, and mode ownership.
-- MCP internal command surface spec mapping editor automation to command APIs,
-  not UI automation.
+- Specs for `Project`, `Scene`, `Reflection`, `DiagnosticsStore`, `Command` /
+  `ChangeRecord`, `RuntimeWorld`, `FrameScheduler`, `ResourceDatabase`,
+  `EditorSession`, and MCP internal command surfaces.
+- Each spec names owning crates, dependency boundaries, serialized-format
+  impact, diagnostics behavior, and public API constraints.
 
-Representative issues:
-
-- Project and editor session internal API spec.
-- Scene/reflection/serialization internal API spec.
-- Diagnostics store internal API spec.
-- Command/change-record internal API spec.
-- Runtime world/frame scheduler internal API spec.
-- Resource database/import state internal API spec.
-- MCP internal command surface spec.
+Representative issues: project/editor session spec; scene/reflection spec;
+diagnostics spec; command/change-record spec; runtime/frame spec; resource
+database spec; MCP command surface spec.
 
 Implementation level: Level 0.
-
-Required tests/checks:
-
-- Relevant docs/ADR consistency checks.
-- Verify each spec names owning crates and dependency boundaries.
-
-Human verification:
-
-- Confirm specs are sufficient for independent implementation agents to proceed
-  without inventing public APIs.
+Required tests/checks: docs/ADR consistency checks.
+Human verification: confirm specs are sufficient to prevent invented APIs.
 
 ## M6: Project Model and Diagnostics Store
 
-Goal: create the engine-owned project/document health layer that editor,
-serialization, MCP, and tests can share.
+Goal: create the engine-owned project/document health layer shared by
+serialization, editor, MCP, and tests.
 
 Key outputs:
 
 - Project identity/settings model for `Kinetik.toml`.
 - Project layout validation wired to structured diagnostics.
 - Active scene/document references without editor-only state.
-- Diagnostics store for current project health, with stable codes and blocking
-  scopes.
-- Separation between diagnostics and chronological logs.
-- Project-level test fixtures.
+- Diagnostics store for current health, filtering, blocking scopes, and
+  repairability.
 
-Representative issues:
-
-- Project model scaffold.
-- Project diagnostics store.
-- Project layout validation diagnostics.
-- Project fixture helpers.
-- Project metadata contract tests.
+Representative issues: project model scaffold; project diagnostics store;
+layout validation diagnostics; project fixture helpers.
 
 Implementation level: Level 2.
-
-Required tests/checks:
-
-- Level 2 checks from `AGENTS.md`.
-- Unit tests for project layout validation and diagnostic filtering.
-- Golden fixtures once project serialization is active.
-
-Human verification:
-
-- Confirm the project model does not depend on editor crates or UI state.
+Required tests/checks: Level 2 checks, layout/diagnostic unit tests, golden
+fixtures once serialization is active.
+Human verification: confirm no dependency on editor crates or UI state.
 
 ## M7: Engine Class and Spatial Model
 
@@ -250,73 +183,40 @@ to rendering, physics, or editor UI.
 
 Key outputs:
 
-- Built-in class descriptors beyond root services, including initial 3D-facing
-  instance classes.
-- Clear class capability metadata or inheritance/composition policy.
-- Transform property contract for local transforms.
-- World-transform derivation policy and deterministic traversal.
-- Transform dirty/update behavior.
-- Initial bounds/AABB contract for selection, picking, physics, and render
-  extraction.
-- Validation diagnostics for invalid class/property/spatial state.
+- Built-in class descriptors beyond root services.
+- Class capability metadata or inheritance/composition policy.
+- Local transform property contract and world-transform derivation.
+- Deterministic traversal, transform dirty/update behavior, and bounds contract.
 
-Representative issues:
-
-- Built-in 3D class descriptor set.
-- Transform property and validation contract.
-- World transform derivation.
-- Spatial bounds contract.
-- Class capability metadata.
+Representative issues: built-in 3D class descriptor set; transform contract;
+world transform derivation; spatial bounds contract.
 
 Implementation level: Level 2.
-
-Required tests/checks:
-
-- Level 2 checks from `AGENTS.md`.
-- Determinism tests for traversal and transform derivation.
-- Invalid class/property diagnostics tests.
-
-Human verification:
-
-- Confirm class names and property paths match the accepted reflection and Luau
-  naming direction.
+Required tests/checks: Level 2 checks, traversal/transform determinism tests,
+invalid class/property diagnostics.
+Human verification: confirm class names and property paths match reflection and
+Luau direction.
 
 ## M8: Runtime World and Frame Kernel
 
-Goal: establish the deterministic runtime world and frame-step skeleton before
+Goal: establish runtime world identity and deterministic frame stepping before
 script, physics, render, play mode, or MCP runtime inspection depend on it.
 
 Key outputs:
 
-- Runtime world derived from an edit scene/document.
-- Runtime IDs distinct from edit-world IDs, with stable GUID mapping where
-  appropriate.
+- Runtime world derived from edit scene/document state.
+- Runtime IDs distinct from edit IDs, with GUID mapping where appropriate.
 - Runtime-only spawn/despawn policy.
-- Variable frame update and fixed-step accumulator skeleton.
-- Safe structural-change queues at frame/fixed-step sync points.
-- Frame-scoped diagnostics/log attribution.
-- Coherent world snapshot boundary for rendering and inspection.
+- Variable update, fixed-step accumulator, safe structural-change sync points,
+  and coherent snapshot boundary.
 
-Representative issues:
-
-- Runtime world clone from edit scene.
-- Runtime identity mapping.
-- Runtime frame step skeleton.
-- Fixed-step scheduler skeleton.
-- Runtime structural-change sync points.
-- Runtime diagnostics/log attribution.
+Representative issues: runtime world clone; runtime identity mapping; frame step
+skeleton; fixed-step scheduler; runtime diagnostics/log attribution.
 
 Implementation level: Level 3.
-
-Required tests/checks:
-
-- Level 3 checks from `AGENTS.md`.
-- Integration tests for edit-to-runtime cloning and teardown.
-- Deterministic frame/fixed-step ordering tests.
-
-Human verification:
-
-- Confirm the runtime model preserves ADR 0019 edit/play boundaries.
+Required tests/checks: Level 3 checks, edit-to-runtime cloning tests,
+deterministic frame/fixed-step ordering tests.
+Human verification: confirm ADR 0019 edit/play boundaries are preserved.
 
 ## M9: Signal and Event Delivery
 
@@ -328,72 +228,42 @@ Key outputs:
 - Signal descriptors and stable author-facing names.
 - Connection/disconnection lifecycle.
 - Deterministic event queues and delivery order.
-- Frame-level and fixed-step flush points.
-- Cleanup when instances or runtime worlds are destroyed.
-- Diagnostics for invalid signal usage.
+- Frame-level/fixed-step flush points and cleanup on instance/world teardown.
 
-Representative issues:
-
-- Signal connection handle model.
-- Deterministic signal delivery queue.
-- Frame/fixed-step signal flush integration.
-- Signal cleanup on instance deletion.
-- Signal diagnostics.
+Representative issues: signal connection handles; deterministic delivery queue;
+flush integration; cleanup and diagnostics.
 
 Implementation level: Level 2.
-
-Required tests/checks:
-
-- Level 2 checks from `AGENTS.md`.
-- Determinism tests for delivery order.
-- Lifecycle cleanup tests.
-
-Human verification:
-
-- Confirm signal behavior can support Luau-friendly events without exposing
-  runtime internals.
+Required tests/checks: Level 2 checks, delivery-order determinism tests,
+lifecycle cleanup tests.
+Human verification: confirm Luau-friendly events can be supported safely.
 
 ## M10: Command and Semantic Change Core
 
-Goal: implement the shared mutation surface used later by editor UI, MCP,
-dirty-state tracking, undo/redo, serialization, diagnostics, and tests.
+Goal: implement the shared mutation surface for editor UI, MCP, dirty-state
+tracking, undo/redo, serialization, diagnostics, and tests.
 
 Key outputs:
 
-- Command input/result model.
-- Validation-before-mutation contract.
+- Command input/result model with validation before mutation.
 - Structured semantic change records.
 - Undo/redo record shape and grouping.
-- Dirty-state explanation based on saved snapshots plus change records.
-- Command diagnostics for invalid operations.
+- Dirty-state explanation from saved snapshots and change records.
 - Initial scene and project command families.
 
-Representative issues:
-
-- Command result and validation model.
-- Semantic change record model.
-- Undo/redo stack core.
-- Dirty-state explanation core.
-- Scene command family.
-- Project command family.
+Representative issues: command result model; semantic change records; undo/redo
+core; dirty-state explanation; scene/project command families.
 
 Implementation level: Level 3.
-
-Required tests/checks:
-
-- Level 3 checks from `AGENTS.md`.
-- Unit tests for validation and failure diagnostics.
-- Integration tests for undo/redo and dirty-state explanations.
-
-Human verification:
-
-- Confirm command records express editor and MCP needs before UI handlers are
-  built on top.
+Required tests/checks: Level 3 checks, validation diagnostics, undo/redo and
+dirty-state integration tests.
+Human verification: confirm command records express editor and MCP needs before
+UI handlers are built.
 
 ## M11: Resource Database and Asset Validation
 
 Goal: move from manifest identity to an engine-owned resource database that can
-validate references and report asset health before import/rendering work grows.
+validate references and report asset health.
 
 Key outputs:
 
@@ -401,28 +271,15 @@ Key outputs:
 - GUID and `res://` lookup APIs.
 - Missing/moved/duplicate asset diagnostics.
 - Resource reference validation from scene/property values.
-- Import cache state model without requiring full importers yet.
-- Asset dependency lookup contract.
+- Import cache state model and asset dependency lookup contract.
 
-Representative issues:
-
-- Resource database scaffold.
-- Resource reference validation.
-- Missing and duplicate asset diagnostics.
-- Import cache state contract.
-- Asset dependency lookup contract.
+Representative issues: resource database scaffold; reference validation;
+missing/duplicate diagnostics; import cache state; dependency lookup.
 
 Implementation level: Level 2.
-
-Required tests/checks:
-
-- Level 2 checks from `AGENTS.md`.
-- Unit tests for lookup, validation, and diagnostics.
-- Golden manifest fixtures once serialization is active.
-
-Human verification:
-
-- Confirm third-party importer types do not leak into public resource APIs.
+Required tests/checks: Level 2 checks, lookup/validation/diagnostics tests,
+golden manifest fixtures once serialization is active.
+Human verification: confirm importer types do not leak into public resource APIs.
 
 ## M12: Script Runtime Contract Slice
 
@@ -431,33 +288,19 @@ before committing to a concrete Luau bridge.
 
 Key outputs:
 
-- Script asset/reference contract.
-- Script attachment model.
-- Lifecycle scheduling contract for `Ready`, `Update`, `PhysicsUpdate`, and
-  `Exit`.
-- Safe instance/resource handle access boundaries.
-- Script diagnostics and source locations.
-- Structural changes from scripts routed through runtime-safe queues.
+- Script asset/reference and attachment contracts.
+- Lifecycle scheduling for `Ready`, `Update`, `PhysicsUpdate`, and `Exit`.
+- Safe instance/resource handle boundaries.
+- Script diagnostics and queued structural changes from scripts.
 
-Representative issues:
-
-- Script attachment contract.
-- Script lifecycle dispatch contract.
-- Safe script handle API.
-- Script diagnostics contract.
-- Script structural-change queue integration.
+Representative issues: script attachment contract; lifecycle dispatch contract;
+safe script handle API; script diagnostics; structural-change queue integration.
 
 Implementation level: Level 3.
-
-Required tests/checks:
-
-- Level 3 checks from `AGENTS.md`.
-- Lifecycle ordering tests using a fake script runtime.
-- Diagnostics tests for missing scripts and invalid handles.
-
-Human verification:
-
-- Confirm the contract can support Luau without exposing VM internals.
+Required tests/checks: Level 3 checks, fake-runtime lifecycle ordering tests,
+missing-script and invalid-handle diagnostics.
+Human verification: confirm the contract can support Luau without VM internals
+leaking.
 
 ## M13: Editor Command Surface
 
@@ -466,34 +309,19 @@ visible editor UI and MCP mutating tools rely on them.
 
 Key outputs:
 
-- Create/delete/rename/reparent instance commands.
-- Duplicate instance command.
+- Create/delete/rename/reparent/duplicate instance commands.
 - Set reflected property command.
 - Attach/detach script command.
-- Import/change asset setting command shape where resource APIs exist.
-- Undo/redo groups and dirty-state explanations.
-- Command diagnostics suitable for UI and MCP.
+- Asset command shape where resource APIs exist.
+- Undo/redo groups, dirty-state explanations, and command diagnostics.
 
-Representative issues:
-
-- Instance mutation commands.
-- Property mutation command.
-- Script attachment command.
-- Asset command scaffold.
-- Undo/redo command grouping.
-- Dirty-state explanation tests.
+Representative issues: instance mutation commands; property command; script
+attachment command; asset command scaffold; undo/redo grouping.
 
 Implementation level: Level 3.
-
-Required tests/checks:
-
-- Level 3 checks from `AGENTS.md`.
-- Command integration tests against project/scene fixtures.
-- Dirty-state and undo/redo tests.
-
-Human verification:
-
-- Confirm editor commands are stable enough to act as automation surfaces.
+Required tests/checks: Level 3 checks, command integration tests, dirty-state
+and undo/redo tests.
+Human verification: confirm commands are stable automation surfaces.
 
 ## M14: MCP Read-Only Automation
 
@@ -503,36 +331,17 @@ resource state through semantic tools.
 Key outputs:
 
 - Editor-owned MCP server scaffold.
-- `project.open` / `project.create_temp` shape.
-- `scene.list_instances`.
-- `scene.get_instance`.
-- `scene.get_property`.
-- `asset.list` / `asset.list_dependencies` shape.
-- `diagnostics.list`.
-- `editor.get_dirty_state`.
-- Test harness hooks.
+- Read-only project, scene, property, resource, diagnostics, and dirty-state
+  commands.
+- Fixture-backed test harness hooks.
 
-Representative issues:
-
-- MCP server dependency proposal.
-- MCP read-only command schema.
-- MCP diagnostics listing.
-- MCP scene inspection.
-- MCP resource inspection.
-- MCP project temp workspace test support.
+Representative issues: MCP server dependency proposal; read-only command
+schema; diagnostics listing; scene/resource inspection; temp workspace support.
 
 Implementation level: Level 4.
-
-Required tests/checks:
-
-- Level 4 checks from `AGENTS.md`.
-- Schema tests for read-only command responses.
-- Fixture-backed tests for scene/resource/diagnostic inspection.
-
-Human verification:
-
-- Confirm read-only MCP reports the same state humans see in project files and
-  diagnostics.
+Required tests/checks: Level 4 checks, schema tests, fixture-backed inspection
+tests.
+Human verification: confirm MCP reports the same state humans see.
 
 ## M15: MCP Mutating Automation
 
@@ -541,37 +350,17 @@ no second mutation path.
 
 Key outputs:
 
-- `scene.create_instance`.
-- `scene.set_property`.
-- `scene.reparent_instance`.
-- `scene.delete_instance`.
-- `editor.undo` / `editor.redo`.
-- Mutating MCP commands mapped to editor commands.
+- Mutating scene/property/undo/redo MCP commands mapped to editor commands.
 - Dirty-state and diagnostics verification.
 - Explicit edit/play target-mode handling.
 
-Representative issues:
-
-- MCP create/delete instance commands.
-- MCP set property command.
-- MCP reparent command.
-- MCP undo/redo command.
-- MCP command-to-change-record integration tests.
-- MCP edit/play ambiguity diagnostics.
+Representative issues: MCP create/delete/reparent/set-property commands; MCP
+undo/redo; command-to-change-record tests; edit/play ambiguity diagnostics.
 
 Implementation level: Level 4.
-
-Required tests/checks:
-
-- Level 4 checks from `AGENTS.md`.
-- Integration tests proving MCP and command APIs produce equivalent change
-  records.
-- Dirty-state and undo/redo tests through MCP.
-
-Human verification:
-
-- Confirm MCP cannot bypass validation, undo, diagnostics, dirty state, or play
-  mode boundaries.
+Required tests/checks: Level 4 checks, MCP/command parity tests, dirty-state and
+undo/redo tests through MCP.
+Human verification: confirm MCP cannot bypass validation or play boundaries.
 
 ## M16: First Editor Shell
 
@@ -580,103 +369,57 @@ is already a complete editor.
 
 Key outputs:
 
-- Window shell.
-- Basic app lifecycle.
+- Window shell and basic app lifecycle.
 - Panel layout for Explorer, Inspector, Diagnostics, and Viewport placeholder.
 - Menu/toolbar placeholders for open/save/play actions.
 - Manual/screenshot smoke verification.
-- No direct project mutation from UI handlers that bypasses commands.
 
-Representative issues:
-
-- Editor shell dependency proposal.
-- Window and app shell.
-- Panel layout scaffold.
-- Diagnostics panel placeholder.
-- Viewport placeholder.
-- Screenshot smoke.
+Representative issues: editor shell dependency proposal; window/app shell;
+panel layout scaffold; diagnostics panel placeholder; viewport placeholder.
 
 Implementation level: Level 5.
-
-Required tests/checks:
-
-- Level 5 checks from `AGENTS.md`.
-- Manual or automated screenshot smoke.
-- No runtime/editor dependency boundary violations.
-
-Human verification:
-
-- Confirm the shell is visually coherent enough to continue editor work.
+Required tests/checks: Level 5 checks, screenshot smoke, boundary checks.
+Human verification: confirm the shell is visually coherent enough to continue.
 
 ## M17: Editor Document Session
 
-Goal: give the editor a real document/session model for active project, scene,
-selection, diagnostics, dirty state, and mode ownership.
+Goal: give the editor real session state for active project, scene, selection,
+diagnostics, dirty state, and mode ownership.
 
 Key outputs:
 
-- Active project/session state.
-- Active scene/document state.
+- Active project and scene document state.
 - Selection model.
 - Dirty-state source wired to command/change records.
 - Diagnostics collection and panel data model.
-- Open/close project flow.
-- Clear edit/play mode ownership.
+- Open/close project flow and edit/play mode ownership.
 
-Representative issues:
-
-- Editor session model.
-- Active project and scene document state.
-- Editor selection model.
-- Editor diagnostics model.
-- Editor dirty-state integration.
-- Open/close project flow.
+Representative issues: editor session model; active project/scene state;
+selection model; diagnostics model; dirty-state integration.
 
 Implementation level: Level 4.
-
-Required tests/checks:
-
-- Level 4 checks from `AGENTS.md`.
-- Unit/integration tests for selection and dirty-state transitions.
-- Manual editor smoke for opening and closing a project.
-
-Human verification:
-
-- Confirm editor state is separate from runtime state and project source state.
+Required tests/checks: Level 4 checks, selection/dirty-state tests, open/close
+project smoke.
+Human verification: confirm editor state is separate from runtime/source state.
 
 ## M18: Explorer Scene Editing
 
-Goal: make the Explorer a real scene hierarchy surface backed by editor
-commands.
+Goal: make the Explorer a real hierarchy surface backed by editor commands.
 
 Key outputs:
 
 - Display actual scene hierarchy.
-- Select instance.
-- Create, delete, rename, duplicate, and reparent through commands.
+- Select, create, delete, rename, duplicate, and reparent through commands.
 - Show stable path/GUID information where useful.
-- Update dirty state and diagnostics after each command.
-- Undo/redo support for Explorer operations.
+- Update dirty state and diagnostics, with undo/redo support.
 
-Representative issues:
-
-- Explorer hierarchy view.
-- Explorer selection integration.
-- Explorer create/delete/rename commands.
-- Explorer reparent/duplicate commands.
-- Explorer undo/redo smoke.
+Representative issues: hierarchy view; selection integration; create/delete/
+rename; reparent/duplicate; undo/redo smoke.
 
 Implementation level: Level 5.
-
-Required tests/checks:
-
-- Level 5 checks from `AGENTS.md`.
-- Command-level tests plus editor smoke.
-- Screenshot/manual verification for common hierarchy edits.
-
-Human verification:
-
-- Confirm hierarchy edits feel understandable and do not mutate unrelated state.
+Required tests/checks: Level 5 checks, command tests, screenshot/manual
+verification.
+Human verification: confirm hierarchy edits are understandable and scoped.
 
 ## M19: Inspector Property Editing
 
@@ -685,33 +428,18 @@ the same validation path as commands and MCP.
 
 Key outputs:
 
-- Basic typed field rendering for strings, numbers, bools, vectors, colors, and
-  resource/instance references as available.
+- Basic typed fields for common reflected value types.
 - Property edits routed through `SetProperty`.
 - Read-only and validation diagnostics displayed.
-- Undo/redo support for property edits.
-- Inspector and MCP property behavior aligned.
+- Undo/redo support and MCP property behavior parity.
 
-Representative issues:
-
-- Inspector descriptor rendering.
-- Inspector basic typed fields.
-- Inspector set-property command integration.
-- Inspector validation diagnostics.
-- Inspector undo/redo smoke.
+Representative issues: descriptor rendering; typed fields; set-property
+integration; validation diagnostics; undo/redo smoke.
 
 Implementation level: Level 5.
-
-Required tests/checks:
-
-- Level 5 checks from `AGENTS.md`.
-- Property validation tests.
-- Screenshot/manual verification for common property edits.
-
-Human verification:
-
-- Confirm the Inspector is clear, typed, and does not invent editor-only
-  property rules.
+Required tests/checks: Level 5 checks, property validation tests, screenshot/
+manual verification.
+Human verification: confirm the Inspector does not invent editor-only rules.
 
 ## M20: Project Save/Reload From Editor
 
@@ -719,32 +447,19 @@ Goal: prove the editor can persist and reload project state deterministically.
 
 Key outputs:
 
-- Save active project/scene/manifest state through approved serialization
-  boundaries.
-- Reload saved project into equivalent source state.
+- Save and reload active project/scene/manifest state through approved
+  serialization boundaries.
 - Dirty state clears only when saved snapshots match.
-- Preserve GUIDs, hierarchy, properties, and manifest references.
+- GUIDs, hierarchy, properties, and manifest references are preserved.
 - Golden fixtures for editor save/reload.
 
-Representative issues:
-
-- Editor save command.
-- Editor reload command.
-- Save/reload dirty-state tests.
-- Editor project golden fixtures.
-- Save/reload diagnostics.
+Representative issues: editor save command; reload command; dirty-state tests;
+golden fixtures; save/reload diagnostics.
 
 Implementation level: Level 4.
-
-Required tests/checks:
-
-- Level 4 checks from `AGENTS.md`.
-- Golden fixture tests.
-- Editor smoke for save, reload, and dirty-state explanation.
-
-Human verification:
-
-- Confirm saved files are deterministic and reviewable in Git.
+Required tests/checks: Level 4 checks, golden fixture tests, editor save/reload
+smoke.
+Human verification: confirm saved files are deterministic and Git-reviewable.
 
 ## M21: MCP Editor Parity Slice
 
@@ -756,28 +471,13 @@ Key outputs:
 - MCP reports active project, scene, selection, diagnostics, and dirty state.
 - MCP mutating commands produce the same change records as UI commands.
 - UI updates after MCP changes.
-- MCP selection/focus commands where useful.
-- Parity tests for representative Explorer and Inspector workflows.
 
-Representative issues:
-
-- MCP active editor state.
-- MCP selection and focus commands.
-- MCP/UI command parity tests.
-- MCP diagnostics parity.
-- MCP dirty-state parity.
+Representative issues: MCP active editor state; selection/focus commands;
+MCP/UI parity tests; diagnostics and dirty-state parity.
 
 Implementation level: Level 4.
-
-Required tests/checks:
-
-- Level 4 checks from `AGENTS.md`.
-- MCP-driven editor integration tests.
-- Manual editor smoke for MCP-triggered changes.
-
-Human verification:
-
-- Confirm agent automation does not create state the editor cannot explain.
+Required tests/checks: Level 4 checks, MCP-driven editor integration tests.
+Human verification: confirm agent automation creates explainable editor state.
 
 ## M22: Play Mode Control Slice
 
@@ -788,30 +488,16 @@ Key outputs:
 
 - Play, stop, and step controls.
 - Runtime world created from current edit scene.
-- Runtime IDs distinct from edit IDs.
-- Stop destroys play world.
+- Runtime IDs distinct from edit IDs; stop destroys play world.
 - Runtime diagnostics visible in editor/MCP.
 - Ambiguous edit/play commands fail with diagnostics.
 
-Representative issues:
-
-- Editor play/start/stop controls.
-- Runtime sandbox integration.
-- Runtime diagnostics panel integration.
-- MCP play.start/play.step/play.stop.
-- Edit/play mutation boundary tests.
+Representative issues: play/start/stop controls; runtime sandbox integration;
+runtime diagnostics panel integration; MCP play commands; boundary tests.
 
 Implementation level: Level 4.
-
-Required tests/checks:
-
-- Level 4 checks from `AGENTS.md`.
-- Lifecycle tests for play, step, stop, and teardown.
-- MCP/headless play-mode smoke.
-
-Human verification:
-
-- Confirm play mode never silently persists runtime-only mutations.
+Required tests/checks: Level 4 checks, play lifecycle tests, MCP/headless smoke.
+Human verification: confirm play mode does not persist runtime-only mutations.
 
 ## M23: Viewport Interaction Scaffold
 
@@ -820,33 +506,18 @@ authoring depend on them.
 
 Key outputs:
 
-- Viewport panel owns camera/navigation state.
+- Viewport camera/navigation state.
 - Focus selected instance.
 - Basic selection highlight or overlay.
 - Placeholder picking/focus contract.
-- Screenshot smoke for viewport layout and selection context.
-- Path toward runtime renderer usage without a separate long-term renderer.
+- Screenshot smoke and path toward runtime renderer usage.
 
-Representative issues:
-
-- Viewport camera/navigation state.
-- Viewport focus selected.
-- Viewport selection overlay.
-- Viewport picking contract.
-- Viewport screenshot smoke.
+Representative issues: viewport camera/navigation; focus selected; selection
+overlay; picking contract; screenshot smoke.
 
 Implementation level: Level 5.
-
-Required tests/checks:
-
-- Level 5 checks from `AGENTS.md`.
-- Screenshot/manual verification.
-- No divergence from planned runtime renderer path.
-
-Human verification:
-
-- Confirm viewport interactions are understandable enough to support 3D
-  authoring work.
+Required tests/checks: Level 5 checks, screenshot/manual verification.
+Human verification: confirm interactions can support 3D authoring.
 
 ## M24: First 3D Scene Authoring Slice
 
@@ -855,105 +526,59 @@ rendering quality.
 
 Key outputs:
 
-- Create/scaffold project.
-- Load scene.
-- Add 3D scene instances as data.
-- Set transform and material-facing reflected properties.
-- Save and reload.
-- Enter play mode.
-- Run deterministic frame steps.
-- Inspect diagnostics.
-- Verify through MCP or headless automation.
+- Create/scaffold project, load scene, add 3D scene instances as data, set
+  transform/material-facing properties, save/reload, enter play mode, step, and
+  inspect diagnostics.
+- MCP or headless verification for the full loop.
 
-Representative issues:
-
-- Hello scene upgrade to 3D scene data.
-- End-to-end project scaffold/load/save test.
-- First play-mode smoke.
-- MCP-driven 3D authoring smoke.
+Representative issues: 3D hello scene data; scaffold/load/save test; first
+play-mode smoke; MCP-driven 3D authoring smoke.
 
 Implementation level: Level 4.
-
-Required tests/checks:
-
-- Level 4 checks from `AGENTS.md`.
-- Golden project/scene fixture.
-- MCP or headless smoke for create, save, reload, play, step, and diagnostics.
-
-Human verification:
-
-- Confirm the editor can author and preserve the 3D scene data coherently.
+Required tests/checks: Level 4 checks, golden project/scene fixture,
+MCP/headless smoke.
+Human verification: confirm the editor preserves 3D scene data coherently.
 
 ## M25: First Rendered Primitive Scene
 
-Goal: make runtime and editor rendering capable enough to display a primitive
-scene while preserving the long-term renderer direction.
+Goal: render a primitive scene through the runtime/editor path while preserving
+the long-term renderer direction.
 
 Key outputs:
 
-- Runtime renderer path used by the editor viewport where practical.
-- Camera and light instances sufficient for basic 3D scenes.
-- Built-in primitive mesh resources for cube, sphere, capsule, cylinder, cone,
-  plane, and quad.
-- Initial mesh/material extraction boundary from scene state to render state.
-- PBR-compatible `StandardMaterial` scaffold with safe fallback materials.
-- Structured render diagnostics for missing cameras, meshes, materials,
-  shaders, textures, and lights.
+- Camera and light instances.
+- Built-in primitive mesh resources.
+- Mesh/material extraction boundary.
+- PBR-compatible `StandardMaterial` scaffold and safe fallback materials.
+- Render diagnostics for missing cameras, meshes, materials, shaders, textures,
+  and lights.
 
-Representative issues:
-
-- Renderer dependency and crate-boundary confirmation.
-- Built-in primitive mesh resource set.
-- Camera and light instance render extraction.
-- `StandardMaterial` reflected property scaffold.
-- Safe fallback material and missing-resource diagnostics.
-- Editor viewport renders through runtime renderer path.
+Representative issues: renderer dependency confirmation; primitive meshes;
+camera/light extraction; material scaffold; fallback diagnostics; viewport render.
 
 Implementation level: Level 4.
-
-Required tests/checks:
-
-- Level 4 checks from `AGENTS.md`.
-- Unit tests for deterministic primitive resource identifiers and material
-  defaults.
-- Integration or fixture tests for render extraction diagnostics.
-- Screenshot smoke once viewport rendering exists.
-
-Human verification:
-
-- Confirm a primitive scene renders with stable camera framing, usable
-  selection context, and meaningful diagnostics when resources are invalid.
+Required tests/checks: Level 4 checks, primitive/material unit tests, extraction
+diagnostics, screenshot smoke.
+Human verification: confirm stable framing and useful render diagnostics.
 
 ## M26: Template Project Contract
 
-Goal: define how first-party templates live in the repository before content
-templates become executable acceptance targets.
+Goal: define how first-party templates live in the repository before template
+content becomes executable acceptance targets.
 
 Key outputs:
 
-- Decision on `templates/` versus `examples/` for first-party template projects.
-- Template README and verification-note format.
-- Screenshot/golden reference policy.
-- Template fixture determinism rules.
-- Known-limitation section format.
-- CI/headless/human verification expectations.
+- Decision on `templates/` versus `examples/`.
+- Template README/verification-note format.
+- Screenshot/golden policy, fixture determinism rules, and CI/headless/human
+  verification expectations.
 
-Representative issues:
-
-- Template directory contract.
-- Template verification note format.
-- Template screenshot/golden policy.
-- Template CI fixture policy.
+Representative issues: template directory contract; verification note format;
+screenshot/golden policy; CI fixture policy.
 
 Implementation level: Level 0.
-
-Required tests/checks:
-
-- Relevant docs/ADR consistency checks.
-
-Human verification:
-
-- Approve where template projects live before content work starts.
+Required tests/checks: docs/ADR consistency checks.
+Human verification: approve template location before content work starts.
 
 ## M27: Primitive Showcase Template
 
@@ -962,145 +587,77 @@ transforms, materials, viewport inspection, and play-mode smoke work together.
 
 Key outputs:
 
-- `templates/primitive_showcase` project, or the approved equivalent location.
-- Curated scene containing all supported built-in primitive meshes.
-- Clear hierarchy, names, transforms, and material assignments.
-- Camera and lighting setup suitable for immediate inspection.
-- Save/reload fixture or golden output for the authored scene.
-- Verification notes describing what the template proves and known limitations.
+- Approved-location primitive showcase project.
+- Curated primitive scene with clear hierarchy, transforms, materials, camera,
+  lighting, save/reload fixture, screenshots, and verification notes.
 
-Representative issues:
-
-- Primitive showcase scene authoring fixture.
-- Primitive transform/material editing smoke.
-- Primitive showcase save/reload golden.
-- Primitive showcase editor screenshot verification.
+Representative issues: primitive scene fixture; transform/material editing
+smoke; save/reload golden; editor screenshot verification.
 
 Implementation level: Level 5.
-
-Required tests/checks:
-
-- Level 5 checks from `AGENTS.md`.
-- Golden fixture for the template scene.
-- MCP or headless smoke for open, inspect hierarchy, enter play mode, step, and
-  stop.
-
-Human verification:
-
-- Confirm the scene is visually legible, primitives are recognizable, editor
-  selection/inspection is usable, and play mode does not persist temporary
-  runtime mutations.
+Required tests/checks: Level 5 checks, golden fixture, MCP/headless smoke.
+Human verification: confirm visual legibility and no play-state persistence.
 
 ## M28: Asset Import and Material Foundation
 
-Goal: build the import/material foundation required before a PBR demo claims to
-exercise real asset workflows.
+Goal: build import/material foundation before a PBR demo claims real asset
+workflow coverage.
 
 Key outputs:
 
 - Texture import/reimport/cache smoke.
-- Mesh import smoke for glTF/GLB once approved.
+- glTF/GLB mesh import smoke once approved.
 - Material asset/reference validation.
-- Import settings validation and diagnostics.
-- Missing/invalid resource diagnostics.
-- Imported artifact records in disposable cache state.
+- Import settings/cache artifact records and diagnostics.
 
-Representative issues:
-
-- Asset import dependency installation after approval.
-- Texture import smoke.
-- glTF/GLB mesh import smoke.
-- Material asset reference validation.
-- Import cache artifact records.
-- Import diagnostics.
+Representative issues: import dependency installation after approval; texture
+import; glTF/GLB import; material reference validation; import diagnostics.
 
 Implementation level: Level 4.
-
-Required tests/checks:
-
-- Level 4 checks from `AGENTS.md`.
-- Import fixture tests.
-- Golden manifest/cache metadata tests where stable.
-- Diagnostics tests for missing or invalid resources.
-
-Human verification:
-
-- Confirm imported assets remain deterministic and source assets/manifests stay
-  reviewable.
+Required tests/checks: Level 4 checks, import fixtures, manifest/cache metadata
+tests, diagnostics tests.
+Human verification: confirm assets remain deterministic and reviewable.
 
 ## M29: PBR Material Demo Scene
 
-Goal: demonstrate Kinetik's practical PBR direction with a compact scene that
-exercises material, lighting, texture, import, and render-diagnostic workflows.
+Goal: demonstrate Kinetik's practical PBR direction with a compact material,
+lighting, texture, import, and render-diagnostic scene.
 
 Key outputs:
 
-- `templates/pbr_material_demo` project, or the approved equivalent location.
-- Metallic/roughness material range display.
-- Normal map and emissive material examples when supported.
-- Directional and local light examples matching the current renderer stage.
-- Imported mesh and texture path through the asset manifest.
-- Render diagnostics for missing or invalid material/texture inputs.
-- Screenshot or golden visual references once rendering is stable enough.
+- Approved-location PBR material demo project.
+- Metallic/roughness range, normal/emissive examples when supported, directional
+  and local lighting, imported mesh/texture path, diagnostics, and screenshots.
 
-Representative issues:
-
-- PBR demo material range fixture.
-- Texture and material asset import smoke.
-- PBR light setup and diagnostics.
-- Imported mesh render smoke.
-- PBR demo screenshot verification.
+Representative issues: PBR material range fixture; texture/material import
+smoke; light setup; imported mesh render smoke; screenshot verification.
 
 Implementation level: Level 5.
-
-Required tests/checks:
-
-- Level 5 checks from `AGENTS.md`.
-- Unit tests for material defaults and validation.
-- Integration/golden tests for material and texture references.
-- Screenshot smoke for expected material and lighting visibility.
-
-Human verification:
-
-- Confirm the scene communicates the current material model honestly: no
-  overpromising unsupported shadows, IBL, graph features, or post-processing.
+Required tests/checks: Level 5 checks, material validation, golden/reference
+tests, screenshot smoke.
+Human verification: confirm the scene does not overpromise unsupported renderer
+features.
 
 ## M30: Input, Physics, and Interaction Foundation
 
-Goal: establish the gameplay foundations needed before the FPS prototype becomes
-a template rather than a hardcoded demo.
+Goal: establish gameplay foundations before the FPS prototype becomes a
+template instead of a hardcoded demo.
 
 Key outputs:
 
 - Input mapping and event model.
 - Mouse capture/look policy.
 - Static collision against primitive level geometry.
-- Character body/controller slice.
-- Raycast or proximity interaction primitive.
-- Physics diagnostics and headless deterministic checks where practical.
-
-Representative issues:
-
-- Input dependency and API proposal.
-- Input mapping runtime slice.
-- Mouse capture/look contract.
-- Static collision smoke.
 - Character controller slice.
-- Raycast/proximity interaction slice.
-- Physics diagnostics.
+- Raycast or proximity interaction primitive.
+
+Representative issues: input dependency/API proposal; input mapping; mouse
+capture/look; static collision; character controller; interaction primitive.
 
 Implementation level: Level 4.
-
-Required tests/checks:
-
-- Level 4 checks from `AGENTS.md`.
-- Unit tests for deterministic controller math where practical.
-- Integration/headless tests for collision and interaction state.
-
-Human verification:
-
-- Confirm input and character movement policy is acceptable before content
-  templates depend on it.
+Required tests/checks: Level 4 checks, controller math tests where practical,
+collision/interaction integration tests.
+Human verification: confirm movement/input policy before templates depend on it.
 
 ## M31: Basic FPS Prototype
 
@@ -1109,36 +666,16 @@ render static scenes.
 
 Key outputs:
 
-- `templates/basic_fps` project, or the approved equivalent location.
-- First-person camera/controller using approved input and runtime boundaries.
-- Static collision against simple level geometry.
-- Raycast or proximity interaction for a simple objective.
-- Minimal game loop: start, move/look, interact or collect, open/complete goal,
-  restart.
-- Play-mode diagnostics and no persistence of runtime-only state unless
-  explicitly applied through editor commands.
-- Human playtest checklist for feel, camera comfort, and interaction clarity.
+- Approved-location basic FPS project.
+- First-person camera/controller, static collision, simple interaction, minimal
+  start/move/look/interact/complete/restart loop, diagnostics, and playtest
+  checklist.
 
-Representative issues:
-
-- FPS template task contract and control scheme.
-- First-person controller runtime slice.
-- Static collision smoke for primitive level geometry.
-- Interaction/raycast objective slice.
-- FPS play-mode diagnostics and restart smoke.
-- FPS human playtest checklist.
+Representative issues: FPS task contract/control scheme; controller slice;
+collision smoke; interaction objective; play-mode diagnostics and restart smoke.
 
 Implementation level: Level 5.
-
-Required tests/checks:
-
-- Level 5 checks from `AGENTS.md`.
-- Unit tests for deterministic controller math where practical.
-- Integration/headless tests for collision, objective state, restart, and
-  play-mode lifecycle.
-- MCP play smoke for start, step, diagnostics, and stop once available.
-
-Human verification:
-
-- Confirm movement, mouse look, interaction, and restart feel acceptable for a
-  prototype before treating the template as complete.
+Required tests/checks: Level 5 checks, controller tests where practical,
+headless lifecycle/objective tests, MCP play smoke.
+Human verification: confirm movement, mouse look, interaction, and restart feel
+acceptable for a prototype.
