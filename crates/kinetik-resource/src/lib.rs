@@ -1,6 +1,7 @@
 //! Resource handles and asset path contracts for Kinetik.
 
 use core::{fmt, num::NonZeroU64};
+use std::collections::BTreeSet;
 
 use kinetik_core::{
     Diagnostic, DiagnosticBlockingScope, DiagnosticCode, DiagnosticLocation, DiagnosticSeverity,
@@ -27,6 +28,23 @@ pub enum ResourceError {
         /// Human-readable validation reason.
         reason: &'static str,
     },
+    /// Asset manifest contained the same GUID more than once.
+    DuplicateAssetGuid {
+        /// Duplicate stable asset identity.
+        guid: AssetGuid,
+    },
+    /// Asset manifest contained the same project path more than once.
+    DuplicateAssetPath {
+        /// Duplicate project asset path.
+        path: AssetPath,
+    },
+    /// Importer metadata was empty or malformed.
+    InvalidImporterMetadata {
+        /// Metadata field name.
+        field: &'static str,
+        /// Invalid field value.
+        value: String,
+    },
 }
 
 impl ResourceError {
@@ -38,6 +56,14 @@ impl ResourceError {
     pub const INVALID_ASSET_PATH_CODE: DiagnosticCode =
         DiagnosticCode::new("KT_RESOURCE_INVALID_ASSET_PATH");
 
+    /// Stable diagnostic code for duplicate asset manifest entries.
+    pub const DUPLICATE_ASSET_ENTRY_CODE: DiagnosticCode =
+        DiagnosticCode::new("KT_RESOURCE_DUPLICATE_ASSET_ENTRY");
+
+    /// Stable diagnostic code for invalid importer metadata.
+    pub const INVALID_IMPORTER_METADATA_CODE: DiagnosticCode =
+        DiagnosticCode::new("KT_RESOURCE_INVALID_IMPORTER_METADATA");
+
     /// Diagnostic source for resource-owned validation.
     pub const RESOURCE_SOURCE: DiagnosticSource = DiagnosticSource::new("Resource");
 
@@ -47,6 +73,10 @@ impl ResourceError {
         match self {
             Self::InvalidAssetGuid { .. } => Self::INVALID_ASSET_GUID_CODE,
             Self::EmptyAssetPath | Self::InvalidAssetPath { .. } => Self::INVALID_ASSET_PATH_CODE,
+            Self::DuplicateAssetGuid { .. } | Self::DuplicateAssetPath { .. } => {
+                Self::DUPLICATE_ASSET_ENTRY_CODE
+            }
+            Self::InvalidImporterMetadata { .. } => Self::INVALID_IMPORTER_METADATA_CODE,
         }
     }
 
@@ -54,8 +84,12 @@ impl ResourceError {
     #[must_use]
     pub fn to_diagnostic(&self) -> Diagnostic {
         let mut location = DiagnosticLocation::new();
-        if let Self::InvalidAssetPath { path, .. } = self {
-            location.asset_path = Some(path.clone());
+        match self {
+            Self::InvalidAssetPath { path, .. } => location.asset_path = Some(path.clone()),
+            Self::DuplicateAssetPath { path } => {
+                location.asset_path = Some(path.as_str().to_owned());
+            }
+            _ => {}
         }
         Diagnostic::new(
             self.diagnostic_code(),
@@ -77,6 +111,15 @@ impl fmt::Display for ResourceError {
             Self::EmptyAssetPath => f.write_str("asset path must not be empty"),
             Self::InvalidAssetPath { path, reason } => {
                 write!(f, "invalid asset path {path}: {reason}")
+            }
+            Self::DuplicateAssetGuid { guid } => {
+                write!(f, "asset manifest contains duplicate GUID: {guid}")
+            }
+            Self::DuplicateAssetPath { path } => {
+                write!(f, "asset manifest contains duplicate path: {path}")
+            }
+            Self::InvalidImporterMetadata { field, value } => {
+                write!(f, "asset manifest importer {field} is invalid: {value}")
             }
         }
     }
@@ -210,6 +253,214 @@ impl AssetReference {
     }
 }
 
+/// Asset import settings hash placeholder used by the in-memory manifest model.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ImportSettingsHash(String);
+
+impl ImportSettingsHash {
+    /// Creates an import settings hash after validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResourceError::InvalidImporterMetadata`] when the hash is empty.
+    pub fn new(hash: impl Into<String>) -> ResourceResult<Self> {
+        let hash = hash.into();
+        validate_importer_field("settings_hash", &hash)?;
+        Ok(Self(hash))
+    }
+
+    /// Returns the hash string.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for ImportSettingsHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// In-memory asset manifest entry.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AssetManifestEntry {
+    reference: AssetReference,
+    importer_id: String,
+    importer_version: String,
+    settings_hash: ImportSettingsHash,
+}
+
+impl AssetManifestEntry {
+    /// Creates a manifest entry from validated asset identity and importer metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResourceError`] when importer metadata is empty.
+    pub fn new(
+        reference: AssetReference,
+        importer_id: impl Into<String>,
+        importer_version: impl Into<String>,
+        settings_hash: ImportSettingsHash,
+    ) -> ResourceResult<Self> {
+        let importer_id = importer_id.into();
+        let importer_version = importer_version.into();
+        validate_importer_field("id", &importer_id)?;
+        validate_importer_field("version", &importer_version)?;
+        Ok(Self {
+            reference,
+            importer_id,
+            importer_version,
+            settings_hash,
+        })
+    }
+
+    /// Creates a manifest entry from raw path and importer fields.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResourceError`] when the path or importer metadata is invalid.
+    pub fn from_parts(
+        guid: AssetGuid,
+        path: impl Into<String>,
+        importer_id: impl Into<String>,
+        importer_version: impl Into<String>,
+        settings_hash: impl Into<String>,
+    ) -> ResourceResult<Self> {
+        Self::new(
+            AssetReference::new(guid, AssetPath::new(path)?),
+            importer_id,
+            importer_version,
+            ImportSettingsHash::new(settings_hash)?,
+        )
+    }
+
+    /// Returns the asset reference.
+    #[must_use]
+    pub const fn reference(&self) -> &AssetReference {
+        &self.reference
+    }
+
+    /// Returns stable asset identity.
+    #[must_use]
+    pub const fn guid(&self) -> AssetGuid {
+        self.reference.guid()
+    }
+
+    /// Returns the readable project asset path.
+    #[must_use]
+    pub const fn path(&self) -> &AssetPath {
+        self.reference.path()
+    }
+
+    /// Returns the importer identifier.
+    #[must_use]
+    pub fn importer_id(&self) -> &str {
+        &self.importer_id
+    }
+
+    /// Returns the importer version.
+    #[must_use]
+    pub fn importer_version(&self) -> &str {
+        &self.importer_version
+    }
+
+    /// Returns the import settings hash.
+    #[must_use]
+    pub const fn settings_hash(&self) -> &ImportSettingsHash {
+        &self.settings_hash
+    }
+}
+
+/// Deterministic in-memory asset manifest.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AssetManifest {
+    entries: Vec<AssetManifestEntry>,
+}
+
+impl AssetManifest {
+    /// Creates an empty asset manifest.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+
+    /// Creates a manifest from entries, validating uniqueness and ordering by path.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResourceError`] when entries contain duplicate GUIDs or paths.
+    pub fn from_entries(entries: Vec<AssetManifestEntry>) -> ResourceResult<Self> {
+        let mut manifest = Self { entries };
+        manifest.validate_unique_entries()?;
+        manifest.sort_entries();
+        Ok(manifest)
+    }
+
+    /// Inserts an entry and keeps deterministic manifest ordering.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResourceError`] when the entry duplicates an existing GUID or path.
+    pub fn insert(&mut self, entry: AssetManifestEntry) -> ResourceResult<()> {
+        if self.get_by_guid(entry.guid()).is_some() {
+            return Err(ResourceError::DuplicateAssetGuid { guid: entry.guid() });
+        }
+        if self.get_by_path(entry.path()).is_some() {
+            return Err(ResourceError::DuplicateAssetPath {
+                path: entry.path().clone(),
+            });
+        }
+        self.entries.push(entry);
+        self.sort_entries();
+        Ok(())
+    }
+
+    /// Returns manifest entries in deterministic path order.
+    #[must_use]
+    pub fn entries(&self) -> &[AssetManifestEntry] {
+        &self.entries
+    }
+
+    /// Finds a manifest entry by stable asset identity.
+    #[must_use]
+    pub fn get_by_guid(&self, guid: AssetGuid) -> Option<&AssetManifestEntry> {
+        self.entries.iter().find(|entry| entry.guid() == guid)
+    }
+
+    /// Finds a manifest entry by readable project path.
+    #[must_use]
+    pub fn get_by_path(&self, path: &AssetPath) -> Option<&AssetManifestEntry> {
+        self.entries.iter().find(|entry| entry.path() == path)
+    }
+
+    fn validate_unique_entries(&self) -> ResourceResult<()> {
+        let mut guids = BTreeSet::new();
+        let mut paths = BTreeSet::new();
+        for entry in &self.entries {
+            if !guids.insert(entry.guid()) {
+                return Err(ResourceError::DuplicateAssetGuid { guid: entry.guid() });
+            }
+            if !paths.insert(entry.path().clone()) {
+                return Err(ResourceError::DuplicateAssetPath {
+                    path: entry.path().clone(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn sort_entries(&mut self) {
+        self.entries.sort_by(|left, right| {
+            left.path()
+                .cmp(right.path())
+                .then_with(|| left.guid().cmp(&right.guid()))
+        });
+    }
+}
+
 /// Typed resource handle.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ResourceHandle {
@@ -291,9 +542,39 @@ fn invalid_asset_path(path: &str, reason: &'static str) -> ResourceError {
     }
 }
 
+fn validate_importer_field(field: &'static str, value: &str) -> ResourceResult<()> {
+    if value.trim().is_empty() {
+        return Err(ResourceError::InvalidImporterMetadata {
+            field,
+            value: value.to_owned(),
+        });
+    }
+    if value.trim() != value {
+        return Err(ResourceError::InvalidImporterMetadata {
+            field,
+            value: value.to_owned(),
+        });
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn manifest_entry(
+        guid: u64,
+        path: &str,
+        importer_id: &str,
+    ) -> ResourceResult<AssetManifestEntry> {
+        AssetManifestEntry::from_parts(
+            AssetGuid::new(guid),
+            path,
+            importer_id,
+            "1.0.0",
+            "settings-hash",
+        )
+    }
 
     #[test]
     fn asset_guid_rejects_zero_raw_values() {
@@ -396,5 +677,156 @@ mod tests {
         assert_eq!(diagnostic.source, ResourceError::RESOURCE_SOURCE);
         assert_eq!(diagnostic.blocking, Some(DiagnosticBlockingScope::Import));
         assert_eq!(diagnostic.location.asset_path.as_deref(), Some("bad/path"));
+    }
+
+    #[test]
+    fn manifest_entries_store_identity_path_and_importer_metadata() {
+        let entry = manifest_entry(1, "res://assets/models/tree.glb", "gltf").unwrap();
+
+        assert_eq!(entry.guid(), AssetGuid::new(1));
+        assert_eq!(entry.path().as_str(), "res://assets/models/tree.glb");
+        assert_eq!(entry.importer_id(), "gltf");
+        assert_eq!(entry.importer_version(), "1.0.0");
+        assert_eq!(entry.settings_hash().as_str(), "settings-hash");
+    }
+
+    #[test]
+    fn manifest_entries_reject_missing_paths_and_invalid_importer_metadata() {
+        assert_eq!(
+            AssetManifestEntry::from_parts(AssetGuid::new(1), "", "gltf", "1.0.0", "hash")
+                .unwrap_err(),
+            ResourceError::EmptyAssetPath
+        );
+        assert_eq!(
+            AssetManifestEntry::from_parts(
+                AssetGuid::new(1),
+                "res://assets/tree.glb",
+                " ",
+                "1.0.0",
+                "hash"
+            )
+            .unwrap_err(),
+            ResourceError::InvalidImporterMetadata {
+                field: "id",
+                value: " ".to_owned()
+            }
+        );
+        assert_eq!(
+            ImportSettingsHash::new(" hash ").unwrap_err(),
+            ResourceError::InvalidImporterMetadata {
+                field: "settings_hash",
+                value: " hash ".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn manifest_orders_entries_deterministically_by_path() {
+        let manifest = AssetManifest::from_entries(vec![
+            manifest_entry(2, "res://assets/models/tree.glb", "gltf").unwrap(),
+            manifest_entry(1, "res://assets/audio/theme.ogg", "audio").unwrap(),
+            manifest_entry(3, "res://assets/materials/bark.ktmat", "material").unwrap(),
+        ])
+        .unwrap();
+
+        let ordered_paths: Vec<&str> = manifest
+            .entries()
+            .iter()
+            .map(|entry| entry.path().as_str())
+            .collect();
+        assert_eq!(
+            ordered_paths,
+            vec![
+                "res://assets/audio/theme.ogg",
+                "res://assets/materials/bark.ktmat",
+                "res://assets/models/tree.glb"
+            ]
+        );
+    }
+
+    #[test]
+    fn manifest_rejects_duplicate_guids_and_paths() {
+        assert_eq!(
+            AssetManifest::from_entries(vec![
+                manifest_entry(1, "res://assets/a.glb", "gltf").unwrap(),
+                manifest_entry(1, "res://assets/b.glb", "gltf").unwrap(),
+            ])
+            .unwrap_err(),
+            ResourceError::DuplicateAssetGuid {
+                guid: AssetGuid::new(1)
+            }
+        );
+
+        assert_eq!(
+            AssetManifest::from_entries(vec![
+                manifest_entry(1, "res://assets/a.glb", "gltf").unwrap(),
+                manifest_entry(2, "res://assets/a.glb", "gltf").unwrap(),
+            ])
+            .unwrap_err(),
+            ResourceError::DuplicateAssetPath {
+                path: AssetPath::new("res://assets/a.glb").unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn manifest_insert_validates_duplicates_and_keeps_order() {
+        let mut manifest = AssetManifest::new();
+        manifest
+            .insert(manifest_entry(2, "res://assets/z.glb", "gltf").unwrap())
+            .unwrap();
+        manifest
+            .insert(manifest_entry(1, "res://assets/a.glb", "gltf").unwrap())
+            .unwrap();
+
+        assert_eq!(manifest.entries()[0].guid(), AssetGuid::new(1));
+        assert_eq!(
+            manifest
+                .insert(manifest_entry(1, "res://assets/b.glb", "gltf").unwrap())
+                .unwrap_err(),
+            ResourceError::DuplicateAssetGuid {
+                guid: AssetGuid::new(1)
+            }
+        );
+    }
+
+    #[test]
+    fn manifest_looks_up_entries_by_guid_and_path() {
+        let manifest = AssetManifest::from_entries(vec![
+            manifest_entry(1, "res://assets/a.glb", "gltf").unwrap(),
+            manifest_entry(2, "res://assets/b.glb", "gltf").unwrap(),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            manifest
+                .get_by_guid(AssetGuid::new(2))
+                .unwrap()
+                .path()
+                .as_str(),
+            "res://assets/b.glb"
+        );
+        assert_eq!(
+            manifest
+                .get_by_path(&AssetPath::new("res://assets/a.glb").unwrap())
+                .unwrap()
+                .guid(),
+            AssetGuid::new(1)
+        );
+        assert!(manifest.get_by_guid(AssetGuid::new(99)).is_none());
+    }
+
+    #[test]
+    fn manifest_errors_include_diagnostic_context_when_available() {
+        let error = ResourceError::DuplicateAssetPath {
+            path: AssetPath::new("res://assets/a.glb").unwrap(),
+        };
+        let diagnostic = error.to_diagnostic();
+
+        assert_eq!(diagnostic.code, ResourceError::DUPLICATE_ASSET_ENTRY_CODE);
+        assert_eq!(
+            diagnostic.location.asset_path.as_deref(),
+            Some("res://assets/a.glb")
+        );
     }
 }
