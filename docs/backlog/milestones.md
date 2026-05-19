@@ -679,3 +679,60 @@ Required tests/checks: Level 5 checks, controller tests where practical,
 headless lifecycle/objective tests, MCP play smoke.
 Human verification: confirm movement, mouse look, interaction, and restart feel
 acceptable for a prototype.
+
+## M32: Post-Template Feature Roadmap
+
+Goal: keep a record of major engine/editor capabilities that remain planned
+after the first 3D template set, without pulling them into the primitive, PBR,
+or basic FPS acceptance scope.
+
+Key outputs:
+
+- Deferred feature backlog grouped by subsystem.
+- Dependency/API/spec gates identified before each feature family starts.
+- Clear distinction between first-template requirements and later engine
+  maturity work.
+
+Deferred feature areas:
+
+- Audio: buses, playback, spatial audio, editor preview, and mixing workflows.
+- Animation: clips, skeletal import, animation state, retargeting direction, and
+  editor preview.
+- Runtime UI: UI scene instances, layout, input focus, styling, and menu/HUD
+  workflows.
+- Prefabs and packages: clone-ready templates, override records, package
+  dependencies, and broken-override diagnostics.
+- Build/export/bundles: `.ktbundle` build/load/verify, platform export,
+  signing/hash verification, and runtime content mounting.
+- Terrain and world environment: terrain chunks, brushes, sky/atmosphere,
+  time-of-day, weather direction, and large-world constraints.
+- Advanced rendering: shadows, HDR/tone mapping, environment lighting, IBL,
+  render graph, material graph, shader graph authoring, and Forward+ direction.
+- Asset pipeline expansion: richer model/material import, texture compression,
+  reimport policies, repair tools, and asset dependency visualization.
+- Editor polish: docking/layout persistence, keyboard shortcuts, accessibility,
+  profiling panels, visual regression harness, and richer viewport gizmos.
+- Scripting maturity: Luau type generation, debugger hooks, hot reload policy,
+  API documentation, and sandbox permissions.
+- Physics maturity: joints, triggers/areas, character-controller refinement,
+  collision layers UI, events, debug drawing, and editor quick fixes.
+- Networking/multiplayer: explicitly post-first-template until local runtime,
+  scripting, diagnostics, and editor workflows are proven.
+- 2D support: explicitly post-first-template while Kinetik remains optimized for
+  the first 3D milestones.
+
+Representative issues:
+
+- Future audio foundation roadmap.
+- Future animation foundation roadmap.
+- Future runtime UI roadmap.
+- Future prefab/package implementation roadmap.
+- Future build/export/bundle roadmap.
+- Future terrain/world roadmap.
+- Future advanced renderer roadmap.
+- Future editor polish roadmap.
+
+Implementation level: Level 0.
+Required tests/checks: docs/ADR consistency checks.
+Human verification: confirm each deferred feature family gets dependency review
+and internal API specs before implementation issues are opened.
