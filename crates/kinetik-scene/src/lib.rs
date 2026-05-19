@@ -243,6 +243,23 @@ pub enum SceneError {
         /// Invalid or missing scene path.
         path: String,
     },
+    /// Root instance cannot be deleted through structural mutation.
+    CannotDeleteRoot {
+        /// Root instance ID.
+        root_id: InstanceId,
+    },
+    /// Root instance cannot be reparented.
+    CannotReparentRoot {
+        /// Root instance ID.
+        root_id: InstanceId,
+    },
+    /// Reparenting would create a hierarchy cycle.
+    ReparentCycle {
+        /// Instance being reparented.
+        id: InstanceId,
+        /// Invalid target parent.
+        new_parent: InstanceId,
+    },
     /// Property path is not reflected by the instance class.
     UnknownProperty {
         /// Registered instance class name.
@@ -299,6 +316,16 @@ impl fmt::Display for SceneError {
                 )
             }
             Self::InvalidPath { path } => write!(f, "scene path is invalid or not found: {path}"),
+            Self::CannotDeleteRoot { root_id } => {
+                write!(f, "scene root cannot be deleted: {root_id}")
+            }
+            Self::CannotReparentRoot { root_id } => {
+                write!(f, "scene root cannot be reparented: {root_id}")
+            }
+            Self::ReparentCycle { id, new_parent } => write!(
+                f,
+                "instance {id} cannot be reparented under its descendant {new_parent}"
+            ),
             Self::UnknownProperty {
                 class_name,
                 property_path,
@@ -354,8 +381,152 @@ pub struct InstanceRecord {
     pub properties: BTreeMap<String, PropertyValue>,
 }
 
+/// Scene-local structural mutation batch.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SceneMutationQueue {
+    mutations: Vec<SceneMutation>,
+}
+
+impl SceneMutationQueue {
+    /// Creates an empty mutation queue.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            mutations: Vec::new(),
+        }
+    }
+
+    /// Queues a structural mutation.
+    pub fn push(&mut self, mutation: SceneMutation) {
+        self.mutations.push(mutation);
+    }
+
+    /// Queues root instance creation.
+    pub fn create_root(&mut self, class_name: impl Into<String>, name: impl Into<String>) {
+        self.push(SceneMutation::Create {
+            parent: None,
+            class_name: class_name.into(),
+            name: name.into(),
+        });
+    }
+
+    /// Queues child instance creation.
+    pub fn create_child(
+        &mut self,
+        parent: InstanceId,
+        class_name: impl Into<String>,
+        name: impl Into<String>,
+    ) {
+        self.push(SceneMutation::Create {
+            parent: Some(parent),
+            class_name: class_name.into(),
+            name: name.into(),
+        });
+    }
+
+    /// Queues instance deletion.
+    pub fn delete(&mut self, id: InstanceId) {
+        self.push(SceneMutation::Delete { id });
+    }
+
+    /// Queues instance rename.
+    pub fn rename(&mut self, id: InstanceId, name: impl Into<String>) {
+        self.push(SceneMutation::Rename {
+            id,
+            name: name.into(),
+        });
+    }
+
+    /// Queues instance reparenting.
+    pub fn reparent(&mut self, id: InstanceId, new_parent: InstanceId) {
+        self.push(SceneMutation::Reparent { id, new_parent });
+    }
+
+    /// Returns queued mutations in deterministic apply order.
+    #[must_use]
+    pub fn mutations(&self) -> &[SceneMutation] {
+        &self.mutations
+    }
+
+    /// Returns the number of queued mutations.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.mutations.len()
+    }
+
+    /// Returns whether the queue is empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.mutations.is_empty()
+    }
+}
+
+/// Scene-local structural mutation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SceneMutation {
+    /// Create a root or child instance.
+    Create {
+        /// Optional parent. `None` creates the scene root.
+        parent: Option<InstanceId>,
+        /// Registered class name.
+        class_name: String,
+        /// Instance name.
+        name: String,
+    },
+    /// Delete an instance and its descendants.
+    Delete {
+        /// Instance to delete.
+        id: InstanceId,
+    },
+    /// Rename an instance.
+    Rename {
+        /// Instance to rename.
+        id: InstanceId,
+        /// New instance name.
+        name: String,
+    },
+    /// Move an instance under a new parent.
+    Reparent {
+        /// Instance to move.
+        id: InstanceId,
+        /// Target parent instance.
+        new_parent: InstanceId,
+    },
+}
+
+/// Result produced by applying a scene structural mutation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SceneMutationResult {
+    /// Instance was created.
+    Created {
+        /// Created instance ID.
+        id: InstanceId,
+    },
+    /// Instance and descendants were deleted.
+    Deleted {
+        /// Deleted root instance ID.
+        id: InstanceId,
+        /// Deleted instance IDs in deterministic parent-before-child order.
+        deleted_ids: Vec<InstanceId>,
+    },
+    /// Instance was renamed.
+    Renamed {
+        /// Renamed instance ID.
+        id: InstanceId,
+    },
+    /// Instance was reparented.
+    Reparented {
+        /// Reparented instance ID.
+        id: InstanceId,
+        /// Previous parent.
+        old_parent: Option<InstanceId>,
+        /// New parent.
+        new_parent: InstanceId,
+    },
+}
+
 /// In-memory scene hierarchy.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Scene {
     class_registry: InstanceClassRegistry,
     instances: Vec<InstanceRecord>,
@@ -589,6 +760,64 @@ impl Scene {
         Ok(())
     }
 
+    /// Applies queued structural mutations atomically.
+    ///
+    /// Mutations are applied to a cloned scene in queue order first. The
+    /// original scene is replaced only when every mutation validates and
+    /// applies successfully.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SceneError`] from the first invalid queued mutation without
+    /// partially mutating the original scene.
+    pub fn apply_mutations(
+        &mut self,
+        queue: SceneMutationQueue,
+    ) -> SceneResult<Vec<SceneMutationResult>> {
+        let mut draft = self.clone();
+        let mut results = Vec::with_capacity(queue.len());
+
+        for mutation in queue.mutations {
+            let result = draft.apply_mutation(mutation)?;
+            results.push(result);
+        }
+
+        *self = draft;
+        Ok(results)
+    }
+
+    fn apply_mutation(&mut self, mutation: SceneMutation) -> SceneResult<SceneMutationResult> {
+        match mutation {
+            SceneMutation::Create {
+                parent,
+                class_name,
+                name,
+            } => {
+                let id = match parent {
+                    Some(parent) => self.add_child(parent, class_name, name)?,
+                    None => self.add_root(class_name, name)?,
+                };
+                Ok(SceneMutationResult::Created { id })
+            }
+            SceneMutation::Delete { id } => {
+                let deleted_ids = self.delete_instance(id)?;
+                Ok(SceneMutationResult::Deleted { id, deleted_ids })
+            }
+            SceneMutation::Rename { id, name } => {
+                self.rename_instance(id, name)?;
+                Ok(SceneMutationResult::Renamed { id })
+            }
+            SceneMutation::Reparent { id, new_parent } => {
+                let old_parent = self.reparent_instance(id, new_parent)?;
+                Ok(SceneMutationResult::Reparented {
+                    id,
+                    old_parent,
+                    new_parent,
+                })
+            }
+        }
+    }
+
     fn create_record(
         &mut self,
         class_name: impl Into<String>,
@@ -612,6 +841,73 @@ impl Scene {
             properties,
         });
         Ok(id)
+    }
+
+    fn delete_instance(&mut self, id: InstanceId) -> SceneResult<Vec<InstanceId>> {
+        let index = self.index_of(id)?;
+        if Some(id) == self.root {
+            return Err(SceneError::CannotDeleteRoot { root_id: id });
+        }
+
+        let parent = self.instances[index].parent;
+        let mut deleted_ids = Vec::new();
+        self.collect_subtree_ids(id, &mut deleted_ids)?;
+
+        if let Some(parent) = parent {
+            let parent_index = self.index_of(parent)?;
+            self.instances[parent_index]
+                .children
+                .retain(|child_id| *child_id != id);
+        }
+
+        self.instances
+            .retain(|instance| !deleted_ids.contains(&instance.id));
+        Ok(deleted_ids)
+    }
+
+    fn rename_instance(&mut self, id: InstanceId, name: String) -> SceneResult<()> {
+        validate_instance_name(&name)?;
+        let index = self.index_of(id)?;
+        self.instances[index].name.clone_from(&name);
+        if let Some(PropertyValue::String(stored_name)) =
+            self.instances[index].properties.get_mut("Name")
+        {
+            *stored_name = name;
+        }
+        Ok(())
+    }
+
+    fn reparent_instance(
+        &mut self,
+        id: InstanceId,
+        new_parent: InstanceId,
+    ) -> SceneResult<Option<InstanceId>> {
+        let index = self.index_of(id)?;
+        self.index_of(new_parent)?;
+        if Some(id) == self.root {
+            return Err(SceneError::CannotReparentRoot { root_id: id });
+        }
+        if id == new_parent || self.is_descendant_of(new_parent, id)? {
+            return Err(SceneError::ReparentCycle { id, new_parent });
+        }
+
+        let old_parent = self.instances[index].parent;
+        if old_parent == Some(new_parent) {
+            return Ok(old_parent);
+        }
+
+        if let Some(old_parent) = old_parent {
+            let old_parent_index = self.index_of(old_parent)?;
+            self.instances[old_parent_index]
+                .children
+                .retain(|child_id| *child_id != id);
+        }
+
+        let new_parent_index = self.index_of(new_parent)?;
+        self.instances[new_parent_index].children.push(id);
+        let index = self.index_of(id)?;
+        self.instances[index].parent = Some(new_parent);
+        Ok(old_parent)
     }
 
     fn id_by_path(&self, path: &str) -> SceneResult<InstanceId> {
@@ -644,6 +940,26 @@ impl Scene {
             .iter()
             .copied()
             .find(|child_id| self.get(*child_id).is_ok_and(|child| child.name == name))
+    }
+
+    fn collect_subtree_ids(&self, id: InstanceId, output: &mut Vec<InstanceId>) -> SceneResult<()> {
+        let instance = self.get(id)?;
+        output.push(id);
+        for child_id in &instance.children {
+            self.collect_subtree_ids(*child_id, output)?;
+        }
+        Ok(())
+    }
+
+    fn is_descendant_of(&self, id: InstanceId, ancestor: InstanceId) -> SceneResult<bool> {
+        let mut current = self.get(id)?.parent;
+        while let Some(current_id) = current {
+            if current_id == ancestor {
+                return Ok(true);
+            }
+            current = self.get(current_id)?.parent;
+        }
+        Ok(false)
     }
 
     fn class_descriptor(&self, class_name: &str) -> SceneResult<&InstanceClassDescriptor> {
@@ -1130,6 +1446,158 @@ mod tests {
                 actual: PropertyType::String
             }
         );
+    }
+
+    #[test]
+    fn mutation_queue_applies_valid_batch_in_order() {
+        let mut scene = Scene::default_scene().unwrap();
+        let game = scene.root_id().unwrap();
+        let workspace = scene.get_by_path("/Game/Workspace").unwrap().id;
+        let audio = scene.get_by_path("/Game/Audio").unwrap().id;
+
+        let mut queue = SceneMutationQueue::new();
+        queue.rename(workspace, "World");
+        queue.reparent(audio, workspace);
+        queue.create_child(workspace, "Workspace", "Zone");
+
+        let results = scene.apply_mutations(queue).unwrap();
+
+        assert_eq!(
+            results,
+            vec![
+                SceneMutationResult::Renamed { id: workspace },
+                SceneMutationResult::Reparented {
+                    id: audio,
+                    old_parent: Some(game),
+                    new_parent: workspace
+                },
+                SceneMutationResult::Created {
+                    id: InstanceId::new(11)
+                }
+            ]
+        );
+        assert_eq!(scene.path(workspace).unwrap(), "/Game/World");
+        assert_eq!(scene.path(audio).unwrap(), "/Game/World/Audio");
+        assert_eq!(
+            scene.children(workspace).unwrap(),
+            &[audio, InstanceId::new(11)]
+        );
+    }
+
+    #[test]
+    fn mutation_queue_deletes_subtrees_deterministically() {
+        let mut scene = Scene::new();
+        let game = scene.add_root(ROOT_CLASS_NAME, "Game").unwrap();
+        let workspace = scene.add_child(game, "Workspace", "Workspace").unwrap();
+        let parent = scene.add_child(workspace, "Workspace", "Parent").unwrap();
+        let child = scene.add_child(parent, "Workspace", "Child").unwrap();
+
+        let mut queue = SceneMutationQueue::new();
+        queue.delete(parent);
+
+        assert_eq!(
+            scene.apply_mutations(queue).unwrap(),
+            vec![SceneMutationResult::Deleted {
+                id: parent,
+                deleted_ids: vec![parent, child]
+            }]
+        );
+        assert_eq!(scene.children(workspace).unwrap(), &[]);
+        assert_eq!(
+            scene.get(parent).unwrap_err(),
+            SceneError::InvalidInstanceId { id: parent }
+        );
+        assert_eq!(
+            scene.get(child).unwrap_err(),
+            SceneError::InvalidInstanceId { id: child }
+        );
+    }
+
+    #[test]
+    fn mutation_queue_rejects_invalid_handles_and_classes() {
+        let mut scene = Scene::default_scene().unwrap();
+        let workspace = scene.get_by_path("/Game/Workspace").unwrap().id;
+
+        let mut invalid_parent = SceneMutationQueue::new();
+        invalid_parent.create_child(InstanceId::new(99), "Workspace", "MissingParent");
+        assert_eq!(
+            scene.apply_mutations(invalid_parent).unwrap_err(),
+            SceneError::InvalidInstanceId {
+                id: InstanceId::new(99)
+            }
+        );
+
+        let mut unknown_class = SceneMutationQueue::new();
+        unknown_class.create_child(workspace, "MissingClass", "Thing");
+        assert_eq!(
+            scene.apply_mutations(unknown_class).unwrap_err(),
+            SceneError::UnknownClass {
+                class_name: "MissingClass".to_owned()
+            }
+        );
+
+        let mut invalid_child = SceneMutationQueue::new();
+        invalid_child.reparent(InstanceId::new(99), workspace);
+        assert_eq!(
+            scene.apply_mutations(invalid_child).unwrap_err(),
+            SceneError::InvalidInstanceId {
+                id: InstanceId::new(99)
+            }
+        );
+    }
+
+    #[test]
+    fn mutation_queue_rejects_root_and_cycle_operations() {
+        let mut scene = Scene::new();
+        let game = scene.add_root(ROOT_CLASS_NAME, "Game").unwrap();
+        let workspace = scene.add_child(game, "Workspace", "Workspace").unwrap();
+        let child = scene.add_child(workspace, "Workspace", "Child").unwrap();
+
+        let mut delete_root = SceneMutationQueue::new();
+        delete_root.delete(game);
+        assert_eq!(
+            scene.apply_mutations(delete_root).unwrap_err(),
+            SceneError::CannotDeleteRoot { root_id: game }
+        );
+
+        let mut reparent_root = SceneMutationQueue::new();
+        reparent_root.reparent(game, workspace);
+        assert_eq!(
+            scene.apply_mutations(reparent_root).unwrap_err(),
+            SceneError::CannotReparentRoot { root_id: game }
+        );
+
+        let mut cycle = SceneMutationQueue::new();
+        cycle.reparent(workspace, child);
+        assert_eq!(
+            scene.apply_mutations(cycle).unwrap_err(),
+            SceneError::ReparentCycle {
+                id: workspace,
+                new_parent: child
+            }
+        );
+    }
+
+    #[test]
+    fn failed_mutation_queue_does_not_partially_apply() {
+        let mut scene = Scene::new();
+        let game = scene.add_root(ROOT_CLASS_NAME, "Game").unwrap();
+        let workspace = scene.add_child(game, "Workspace", "Workspace").unwrap();
+        let child = scene.add_child(workspace, "Workspace", "Child").unwrap();
+
+        let mut queue = SceneMutationQueue::new();
+        queue.rename(workspace, "World");
+        queue.reparent(workspace, child);
+
+        assert_eq!(
+            scene.apply_mutations(queue).unwrap_err(),
+            SceneError::ReparentCycle {
+                id: workspace,
+                new_parent: child
+            }
+        );
+        assert_eq!(scene.get(workspace).unwrap().name, "Workspace");
+        assert_eq!(scene.path(child).unwrap(), "/Game/Workspace/Child");
     }
 
     #[test]
