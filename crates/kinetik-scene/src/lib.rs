@@ -706,6 +706,7 @@ pub struct Scene {
     root: Option<InstanceId>,
     next_id: u64,
     next_guid: u64,
+    transform_revision: u64,
 }
 
 impl Scene {
@@ -750,6 +751,7 @@ impl Scene {
             root: None,
             next_id: 1,
             next_guid: 1,
+            transform_revision: 0,
         }
     }
 
@@ -757,6 +759,15 @@ impl Scene {
     #[must_use]
     pub const fn class_registry(&self) -> &InstanceClassRegistry {
         &self.class_registry
+    }
+
+    /// Returns the current scene transform revision.
+    ///
+    /// The revision advances when hierarchy or transform-property edits can
+    /// affect local or world transform results.
+    #[must_use]
+    pub const fn transform_revision(&self) -> u64 {
+        self.transform_revision
     }
 
     /// Returns the root instance ID when the scene has a root.
@@ -965,6 +976,10 @@ impl Scene {
             .properties
             .insert(property_path.to_owned(), value);
 
+        if is_transform_property_path(property_path) {
+            self.advance_transform_revision();
+        }
+
         if property_path == "Name" {
             let Some(PropertyValue::String(name)) = self.instances[index].properties.get("Name")
             else {
@@ -1087,6 +1102,7 @@ impl Scene {
             children: Vec::new(),
             properties,
         });
+        self.advance_transform_revision();
         Ok(id)
     }
 
@@ -1109,6 +1125,7 @@ impl Scene {
 
         self.instances
             .retain(|instance| !deleted_ids.contains(&instance.id));
+        self.advance_transform_revision();
         Ok(deleted_ids)
     }
 
@@ -1154,6 +1171,7 @@ impl Scene {
         self.instances[new_parent_index].children.push(id);
         let index = self.index_of(id)?;
         self.instances[index].parent = Some(new_parent);
+        self.advance_transform_revision();
         Ok(old_parent)
     }
 
@@ -1345,6 +1363,13 @@ impl Scene {
         self.next_guid += 1;
         guid
     }
+
+    fn advance_transform_revision(&mut self) {
+        self.transform_revision = self
+            .transform_revision
+            .checked_add(1)
+            .expect("scene transform revision exhausted u64");
+    }
 }
 
 impl Default for Scene {
@@ -1479,6 +1504,13 @@ fn quat_property(instance: &InstanceRecord, property_path: &str) -> SceneResult<
             actual: value.property_type(),
         }),
     }
+}
+
+fn is_transform_property_path(property_path: &str) -> bool {
+    matches!(
+        property_path,
+        "Transform.Position" | "Transform.Rotation" | "Transform.Scale"
+    )
 }
 
 fn compose_transform(parent: Transform, local: Transform) -> Transform {
@@ -1992,6 +2024,87 @@ mod tests {
                 class_name: ROOT_CLASS_NAME.to_owned()
             }
         );
+    }
+
+    #[test]
+    fn transform_revision_advances_for_hierarchy_and_transform_edits() {
+        let mut scene = Scene::new();
+        assert_eq!(scene.transform_revision(), 0);
+
+        let game = scene.add_root(ROOT_CLASS_NAME, "Game").unwrap();
+        assert_eq!(scene.transform_revision(), 1);
+        let part = scene.add_child(game, "Part", "Block").unwrap();
+        assert_eq!(scene.transform_revision(), 2);
+
+        scene
+            .set_property(part, "Visible", PropertyValue::Bool(false))
+            .unwrap();
+        assert_eq!(scene.transform_revision(), 2);
+        scene
+            .set_property(
+                part,
+                "Transform.Position",
+                PropertyValue::Vec3(kinetik_core::Vec3::X),
+            )
+            .unwrap();
+        assert_eq!(scene.transform_revision(), 3);
+        scene
+            .set_property(
+                part,
+                "Transform.Rotation",
+                PropertyValue::Quat(kinetik_core::Quat::new(0.0, 0.0, 1.0, 0.0)),
+            )
+            .unwrap();
+        assert_eq!(scene.transform_revision(), 4);
+    }
+
+    #[test]
+    fn transform_revision_advances_only_for_successful_transform_changes() {
+        let mut scene = Scene::new();
+        let part = scene.add_root("Part", "Block").unwrap();
+        let revision = scene.transform_revision();
+
+        assert_eq!(
+            scene
+                .set_property(part, "Transform.Position", PropertyValue::Bool(true))
+                .unwrap_err(),
+            SceneError::PropertyTypeMismatch {
+                property_path: "Transform.Position".to_owned(),
+                expected: PropertyType::Vec3,
+                actual: PropertyType::Bool
+            }
+        );
+        assert_eq!(scene.transform_revision(), revision);
+
+        scene
+            .set_property(part, "Name", PropertyValue::String("Renamed".to_owned()))
+            .unwrap();
+        assert_eq!(scene.transform_revision(), revision);
+    }
+
+    #[test]
+    fn transform_revision_tracks_reparent_and_delete_mutations() {
+        let mut scene = Scene::new();
+        let game = scene.add_root(ROOT_CLASS_NAME, "Game").unwrap();
+        let workspace = scene.add_child(game, "Workspace", "Workspace").unwrap();
+        let node = scene.add_child(game, "Node3D", "Node").unwrap();
+        let part = scene.add_child(workspace, "Part", "Block").unwrap();
+        let revision = scene.transform_revision();
+
+        let mut no_op_reparent = SceneMutationQueue::new();
+        no_op_reparent.reparent(part, workspace);
+        scene.apply_mutations(no_op_reparent).unwrap();
+        assert_eq!(scene.transform_revision(), revision);
+
+        let mut reparent = SceneMutationQueue::new();
+        reparent.reparent(part, node);
+        scene.apply_mutations(reparent).unwrap();
+        assert_eq!(scene.transform_revision(), revision + 1);
+
+        let mut delete = SceneMutationQueue::new();
+        delete.delete(part);
+        scene.apply_mutations(delete).unwrap();
+        assert_eq!(scene.transform_revision(), revision + 2);
     }
 
     #[test]
