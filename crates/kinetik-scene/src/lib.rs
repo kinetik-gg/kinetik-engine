@@ -3,7 +3,7 @@
 use core::fmt;
 use std::collections::{BTreeMap, BTreeSet};
 
-use kinetik_core::{InstanceGuid, InstanceId, Vec3};
+use kinetik_core::{InstanceGuid, InstanceId, Quat, Transform, Vec3};
 use kinetik_reflect::{
     EditorHint, PropertyDefault, PropertyDescriptor, PropertyType, PropertyValue, ValueError,
 };
@@ -392,6 +392,13 @@ pub enum SceneError {
         /// Actual value type.
         actual: PropertyType,
     },
+    /// Transform derivation was requested for a non-spatial instance class.
+    NonSpatialInstance {
+        /// Runtime instance ID.
+        id: InstanceId,
+        /// Registered instance class name.
+        class_name: String,
+    },
 }
 
 impl fmt::Display for SceneError {
@@ -459,6 +466,10 @@ impl fmt::Display for SceneError {
             } => write!(
                 f,
                 "property {property_path} expected value type {expected}, got {actual}"
+            ),
+            Self::NonSpatialInstance { id, class_name } => write!(
+                f,
+                "instance {id} of class {class_name} does not have spatial transform properties"
             ),
         }
     }
@@ -863,6 +874,50 @@ impl Scene {
         Ok(&self.get(id)?.properties)
     }
 
+    /// Returns the local transform for a spatial instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SceneError`] when the instance is missing, the class is not
+    /// spatial, or transform property storage is invalid.
+    pub fn local_transform(&self, id: InstanceId) -> SceneResult<Transform> {
+        let instance = self.get(id)?;
+        self.require_spatial_instance(instance)?;
+        local_transform_for_instance(instance)
+    }
+
+    /// Returns the deterministic world transform for a spatial instance.
+    ///
+    /// Non-spatial ancestors contribute identity; spatial ancestors compose in
+    /// parent-before-child order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SceneError`] when the instance is missing, the target class is
+    /// not spatial, or transform property storage is invalid.
+    pub fn world_transform(&self, id: InstanceId) -> SceneResult<Transform> {
+        let target = self.get(id)?;
+        self.require_spatial_instance(target)?;
+
+        let mut hierarchy = Vec::new();
+        let mut current = Some(id);
+        while let Some(current_id) = current {
+            let instance = self.get(current_id)?;
+            hierarchy.push(current_id);
+            current = instance.parent;
+        }
+        hierarchy.reverse();
+
+        let mut transform = Transform::IDENTITY;
+        for current_id in hierarchy {
+            let instance = self.get(current_id)?;
+            if self.is_spatial_instance(instance)? {
+                transform = compose_transform(transform, local_transform_for_instance(instance)?);
+            }
+        }
+        Ok(transform)
+    }
+
     /// Returns a reflected property value for an instance.
     ///
     /// # Errors
@@ -1256,6 +1311,22 @@ impl Scene {
             })
     }
 
+    fn is_spatial_instance(&self, instance: &InstanceRecord) -> SceneResult<bool> {
+        Ok(self
+            .class_descriptor(&instance.class_name)?
+            .has_capability(InstanceClassCapability::Spatial))
+    }
+
+    fn require_spatial_instance(&self, instance: &InstanceRecord) -> SceneResult<()> {
+        if self.is_spatial_instance(instance)? {
+            return Ok(());
+        }
+        Err(SceneError::NonSpatialInstance {
+            id: instance.id,
+            class_name: instance.class_name.clone(),
+        })
+    }
+
     fn index_of(&self, id: InstanceId) -> SceneResult<usize> {
         self.instances
             .iter()
@@ -1280,6 +1351,14 @@ impl Default for Scene {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn local_transform_for_instance(instance: &InstanceRecord) -> SceneResult<Transform> {
+    Ok(Transform::new(
+        vec3_property(instance, "Transform.Position")?,
+        quat_property(instance, "Transform.Rotation")?,
+        vec3_property(instance, "Transform.Scale")?,
+    ))
 }
 
 fn validate_instance_name(name: &str) -> SceneResult<()> {
@@ -1366,6 +1445,115 @@ fn property_value_error(class_name: &str, property_path: &str, error: ValueError
             actual,
         },
     }
+}
+
+fn vec3_property(instance: &InstanceRecord, property_path: &str) -> SceneResult<Vec3> {
+    let Some(value) = instance.properties.get(property_path) else {
+        return Err(SceneError::UnknownProperty {
+            class_name: instance.class_name.clone(),
+            property_path: property_path.to_owned(),
+        });
+    };
+    match value {
+        PropertyValue::Vec3(value) => Ok(*value),
+        value => Err(SceneError::PropertyTypeMismatch {
+            property_path: property_path.to_owned(),
+            expected: PropertyType::Vec3,
+            actual: value.property_type(),
+        }),
+    }
+}
+
+fn quat_property(instance: &InstanceRecord, property_path: &str) -> SceneResult<Quat> {
+    let Some(value) = instance.properties.get(property_path) else {
+        return Err(SceneError::UnknownProperty {
+            class_name: instance.class_name.clone(),
+            property_path: property_path.to_owned(),
+        });
+    };
+    match value {
+        PropertyValue::Quat(value) => Ok(*value),
+        value => Err(SceneError::PropertyTypeMismatch {
+            property_path: property_path.to_owned(),
+            expected: PropertyType::Quat,
+            actual: value.property_type(),
+        }),
+    }
+}
+
+fn compose_transform(parent: Transform, local: Transform) -> Transform {
+    Transform::new(
+        add_vec3(
+            parent.position,
+            rotate_vec3(parent.rotation, mul_vec3(parent.scale, local.position)),
+        ),
+        mul_quat(parent.rotation, local.rotation),
+        mul_vec3(parent.scale, local.scale),
+    )
+}
+
+fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
+    Vec3::new(left.x + right.x, left.y + right.y, left.z + right.z)
+}
+
+fn mul_vec3(left: Vec3, right: Vec3) -> Vec3 {
+    Vec3::new(left.x * right.x, left.y * right.y, left.z * right.z)
+}
+
+fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {
+    Vec3::new(value.x * scale, value.y * scale, value.z * scale)
+}
+
+fn dot_vec3(left: Vec3, right: Vec3) -> f32 {
+    left.x
+        .mul_add(right.x, left.y.mul_add(right.y, left.z * right.z))
+}
+
+fn cross_vec3(left: Vec3, right: Vec3) -> Vec3 {
+    Vec3::new(
+        left.y.mul_add(right.z, -(left.z * right.y)),
+        left.z.mul_add(right.x, -(left.x * right.z)),
+        left.x.mul_add(right.y, -(left.y * right.x)),
+    )
+}
+
+fn mul_quat(left: Quat, right: Quat) -> Quat {
+    Quat::new(
+        left.w.mul_add(
+            right.x,
+            left.x
+                .mul_add(right.w, left.y.mul_add(right.z, -(left.z * right.y))),
+        ),
+        left.w.mul_add(
+            right.y,
+            -(left.x * right.z) + left.y * right.w + left.z * right.x,
+        ),
+        left.w.mul_add(
+            right.z,
+            left.x
+                .mul_add(right.y, -(left.y * right.x) + left.z * right.w),
+        ),
+        left.w.mul_add(
+            right.w,
+            -(left.x * right.x) - left.y * right.y - left.z * right.z,
+        ),
+    )
+}
+
+fn rotate_vec3(rotation: Quat, value: Vec3) -> Vec3 {
+    let vector = Vec3::new(rotation.x, rotation.y, rotation.z);
+    let vector_value_dot = dot_vec3(vector, value);
+    let vector_length_squared = dot_vec3(vector, vector);
+    add_vec3(
+        add_vec3(
+            scale_vec3(vector, 2.0 * vector_value_dot),
+            scale_vec3(
+                value,
+                rotation.w.mul_add(rotation.w, -vector_length_squared),
+            ),
+        ),
+        scale_vec3(cross_vec3(vector, value), 2.0 * rotation.w),
+    )
 }
 
 fn invalid_property_descriptor(
@@ -1691,6 +1879,118 @@ mod tests {
         assert_eq!(
             scene.get_property(part, "Transform.Scale").unwrap(),
             &PropertyValue::Vec3(kinetik_core::Vec3::new(2.0, 2.0, 2.0))
+        );
+    }
+
+    #[test]
+    fn local_transform_reads_reflected_transform_properties() {
+        let mut scene = Scene::new();
+        let part = scene.add_root("Part", "Block").unwrap();
+
+        scene
+            .set_property(
+                part,
+                "Transform.Position",
+                PropertyValue::Vec3(kinetik_core::Vec3::new(1.0, 2.0, 3.0)),
+            )
+            .unwrap();
+        scene
+            .set_property(
+                part,
+                "Transform.Rotation",
+                PropertyValue::Quat(kinetik_core::Quat::new(0.0, 0.0, 1.0, 0.0)),
+            )
+            .unwrap();
+        scene
+            .set_property(
+                part,
+                "Transform.Scale",
+                PropertyValue::Vec3(kinetik_core::Vec3::new(2.0, 3.0, 4.0)),
+            )
+            .unwrap();
+
+        assert_eq!(
+            scene.local_transform(part).unwrap(),
+            kinetik_core::Transform::new(
+                kinetik_core::Vec3::new(1.0, 2.0, 3.0),
+                kinetik_core::Quat::new(0.0, 0.0, 1.0, 0.0),
+                kinetik_core::Vec3::new(2.0, 3.0, 4.0)
+            )
+        );
+    }
+
+    #[test]
+    fn world_transform_composes_spatial_ancestors_deterministically() {
+        let mut scene = Scene::new();
+        let game = scene.add_root(ROOT_CLASS_NAME, "Game").unwrap();
+        let workspace = scene.add_child(game, "Workspace", "Workspace").unwrap();
+        let parent = scene.add_child(workspace, "Node3D", "Parent").unwrap();
+        let child = scene.add_child(parent, "Part", "Child").unwrap();
+
+        scene
+            .set_property(
+                parent,
+                "Transform.Position",
+                PropertyValue::Vec3(kinetik_core::Vec3::new(10.0, 0.0, 0.0)),
+            )
+            .unwrap();
+        scene
+            .set_property(
+                parent,
+                "Transform.Rotation",
+                PropertyValue::Quat(kinetik_core::Quat::new(0.0, 0.0, 1.0, 0.0)),
+            )
+            .unwrap();
+        scene
+            .set_property(
+                parent,
+                "Transform.Scale",
+                PropertyValue::Vec3(kinetik_core::Vec3::new(2.0, 1.0, 1.0)),
+            )
+            .unwrap();
+        scene
+            .set_property(
+                child,
+                "Transform.Position",
+                PropertyValue::Vec3(kinetik_core::Vec3::X),
+            )
+            .unwrap();
+        scene
+            .set_property(
+                child,
+                "Transform.Scale",
+                PropertyValue::Vec3(kinetik_core::Vec3::new(3.0, 4.0, 5.0)),
+            )
+            .unwrap();
+
+        assert_eq!(
+            scene.world_transform(child).unwrap(),
+            kinetik_core::Transform::new(
+                kinetik_core::Vec3::new(8.0, 0.0, 0.0),
+                kinetik_core::Quat::new(0.0, 0.0, 1.0, 0.0),
+                kinetik_core::Vec3::new(6.0, 4.0, 5.0)
+            )
+        );
+    }
+
+    #[test]
+    fn transform_queries_reject_non_spatial_targets() {
+        let mut scene = Scene::new();
+        let game = scene.add_root(ROOT_CLASS_NAME, "Game").unwrap();
+
+        assert_eq!(
+            scene.local_transform(game).unwrap_err(),
+            SceneError::NonSpatialInstance {
+                id: game,
+                class_name: ROOT_CLASS_NAME.to_owned()
+            }
+        );
+        assert_eq!(
+            scene.world_transform(game).unwrap_err(),
+            SceneError::NonSpatialInstance {
+                id: game,
+                class_name: ROOT_CLASS_NAME.to_owned()
+            }
         );
     }
 
