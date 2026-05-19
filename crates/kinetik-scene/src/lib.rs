@@ -1,7 +1,7 @@
 //! Scene and instance graph contracts for Kinetik.
 
 use core::fmt;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use kinetik_core::{InstanceGuid, InstanceId};
 use kinetik_reflect::{
@@ -228,6 +228,13 @@ pub enum SceneError {
         /// Invalid stable instance GUID.
         guid: InstanceGuid,
     },
+    /// Scene did not contain a root instance.
+    MissingRoot,
+    /// Stable instance GUID appeared more than once.
+    DuplicateInstanceGuid {
+        /// Duplicate stable instance GUID.
+        guid: InstanceGuid,
+    },
     /// Class name is not registered in this scene.
     UnknownClass {
         /// Missing class name.
@@ -306,6 +313,10 @@ impl fmt::Display for SceneError {
             Self::InvalidInstanceGuid { guid } => {
                 write!(f, "instance GUID is not present in this scene: {guid}")
             }
+            Self::MissingRoot => f.write_str("scene document must contain a root instance"),
+            Self::DuplicateInstanceGuid { guid } => {
+                write!(f, "scene document contains duplicate instance GUID: {guid}")
+            }
             Self::UnknownClass { class_name } => {
                 write!(f, "instance class is not registered: {class_name}")
             }
@@ -379,6 +390,64 @@ pub struct InstanceRecord {
     pub children: Vec<InstanceId>,
     /// Reflected property values keyed by canonical property path.
     pub properties: BTreeMap<String, PropertyValue>,
+}
+
+/// Dependency-free `.ktscene` document contract.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SceneDocument {
+    /// Root serialized instance tree.
+    pub root: SceneInstanceDocument,
+}
+
+impl SceneDocument {
+    /// Creates a scene document from a root instance tree.
+    #[must_use]
+    pub const fn new(root: SceneInstanceDocument) -> Self {
+        Self { root }
+    }
+}
+
+/// Serialized instance tree contract used by scene and prefab documents.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SceneInstanceDocument {
+    /// Stable serialized instance identity.
+    pub guid: InstanceGuid,
+    /// Registered class name.
+    pub class_name: String,
+    /// Human-readable instance name.
+    pub name: String,
+    /// Reflected property values keyed by canonical property path.
+    pub properties: BTreeMap<String, PropertyValue>,
+    /// Ordered child instance documents.
+    pub children: Vec<SceneInstanceDocument>,
+}
+
+impl SceneInstanceDocument {
+    /// Creates a serialized instance document.
+    #[must_use]
+    pub fn new(guid: InstanceGuid, class_name: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            guid,
+            class_name: class_name.into(),
+            name: name.into(),
+            properties: BTreeMap::new(),
+            children: Vec::new(),
+        }
+    }
+
+    /// Sets reflected property values.
+    #[must_use]
+    pub fn with_properties(mut self, properties: BTreeMap<String, PropertyValue>) -> Self {
+        self.properties = properties;
+        self
+    }
+
+    /// Sets ordered children.
+    #[must_use]
+    pub fn with_children(mut self, children: Vec<Self>) -> Self {
+        self.children = children;
+        self
+    }
 }
 
 /// Scene-local structural mutation batch.
@@ -760,6 +829,36 @@ impl Scene {
         Ok(())
     }
 
+    /// Converts this scene into a deterministic dependency-free scene document.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SceneError::MissingRoot`] when the scene has no root.
+    pub fn to_document(&self) -> SceneResult<SceneDocument> {
+        let root_id = self.root.ok_or(SceneError::MissingRoot)?;
+        Ok(SceneDocument::new(self.instance_to_document(root_id)?))
+    }
+
+    /// Creates a scene from a dependency-free scene document and class registry.
+    ///
+    /// Runtime instance IDs are assigned deterministically in parent-before-child
+    /// document order. Serialized GUIDs are preserved.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SceneError`] when the document contains duplicate GUIDs,
+    /// unknown classes, invalid names, or invalid property values.
+    pub fn from_document(
+        class_registry: InstanceClassRegistry,
+        document: SceneDocument,
+    ) -> SceneResult<Self> {
+        let mut scene = Self::with_class_registry(class_registry);
+        let mut seen_guids = BTreeSet::new();
+        let root = scene.add_document_instance(document.root, None, &mut seen_guids)?;
+        scene.root = Some(root);
+        Ok(scene)
+    }
+
     /// Applies queued structural mutations atomically.
     ///
     /// Mutations are applied to a cloned scene in queue order first. The
@@ -960,6 +1059,87 @@ impl Scene {
             current = self.get(current_id)?.parent;
         }
         Ok(false)
+    }
+
+    fn instance_to_document(&self, id: InstanceId) -> SceneResult<SceneInstanceDocument> {
+        let instance = self.get(id)?;
+        let children = instance
+            .children
+            .iter()
+            .map(|child_id| self.instance_to_document(*child_id))
+            .collect::<SceneResult<Vec<_>>>()?;
+        Ok(SceneInstanceDocument {
+            guid: instance.guid,
+            class_name: instance.class_name.clone(),
+            name: instance.name.clone(),
+            properties: instance.properties.clone(),
+            children,
+        })
+    }
+
+    fn add_document_instance(
+        &mut self,
+        document: SceneInstanceDocument,
+        parent: Option<InstanceId>,
+        seen_guids: &mut BTreeSet<InstanceGuid>,
+    ) -> SceneResult<InstanceId> {
+        if !seen_guids.insert(document.guid) {
+            return Err(SceneError::DuplicateInstanceGuid {
+                guid: document.guid,
+            });
+        }
+
+        validate_instance_name(&document.name)?;
+        let class_name = document.class_name;
+        let name = document.name;
+        let guid = document.guid;
+        let children = document.children;
+        let mut properties =
+            default_properties_for_class(self.class_descriptor(&class_name)?, &name)?;
+        self.validate_document_properties(&class_name, &document.properties)?;
+        for (path, value) in document.properties {
+            properties.insert(path, value);
+        }
+        if let Some(PropertyValue::String(stored_name)) = properties.get_mut("Name") {
+            stored_name.clone_from(&name);
+        }
+
+        let id = self.next_instance_id();
+        self.next_guid = self.next_guid.max(guid.raw() + 1);
+        self.instances.push(InstanceRecord {
+            id,
+            guid,
+            class_name,
+            name,
+            parent,
+            children: Vec::new(),
+            properties,
+        });
+
+        for child in children {
+            let child_id = self.add_document_instance(child, Some(id), seen_guids)?;
+            let index = self.index_of(id)?;
+            self.instances[index].children.push(child_id);
+        }
+
+        Ok(id)
+    }
+
+    fn validate_document_properties(
+        &self,
+        class_name: &str,
+        properties: &BTreeMap<String, PropertyValue>,
+    ) -> SceneResult<()> {
+        for (path, value) in properties {
+            let descriptor = self.property_descriptor_for_class(class_name, path)?;
+            value
+                .validate_for_descriptor(descriptor)
+                .map_err(|error| property_value_error(class_name, path, error))?;
+            if let ("Name", PropertyValue::String(name)) = (path.as_str(), value) {
+                validate_instance_name(name)?;
+            }
+        }
+        Ok(())
     }
 
     fn class_descriptor(&self, class_name: &str) -> SceneResult<&InstanceClassDescriptor> {
@@ -1598,6 +1778,152 @@ mod tests {
         );
         assert_eq!(scene.get(workspace).unwrap().name, "Workspace");
         assert_eq!(scene.path(child).unwrap(), "/Game/Workspace/Child");
+    }
+
+    #[test]
+    fn scene_document_captures_default_scene_shape() {
+        let scene = Scene::default_scene().unwrap();
+        let document = scene.to_document().unwrap();
+
+        assert_eq!(document.root.guid, InstanceGuid::new(1));
+        assert_eq!(document.root.class_name, ROOT_CLASS_NAME);
+        assert_eq!(document.root.name, "Game");
+        assert_eq!(
+            document
+                .root
+                .children
+                .iter()
+                .map(|child| child.name.as_str())
+                .collect::<Vec<_>>(),
+            DEFAULT_SERVICE_CLASS_NAMES
+        );
+    }
+
+    #[test]
+    fn scene_document_round_trips_with_deterministic_runtime_ids() {
+        let original = Scene::default_scene().unwrap();
+        let document = original.to_document().unwrap();
+        let restored = Scene::from_document(
+            InstanceClassRegistry::with_default_scene_classes().unwrap(),
+            document.clone(),
+        )
+        .unwrap();
+
+        assert_eq!(restored.to_document().unwrap(), document);
+        assert_eq!(restored.root_id().unwrap(), InstanceId::new(1));
+        assert_eq!(
+            restored.get_by_path("/Game/Workspace").unwrap().id,
+            InstanceId::new(2)
+        );
+        assert_eq!(
+            restored.get_by_path("/Game/Packages").unwrap().id,
+            InstanceId::new(10)
+        );
+    }
+
+    #[test]
+    fn scene_document_properties_are_ordered_by_canonical_path() {
+        let mut scene = scene_with_part_class();
+        let part = scene.add_root("Part", "Block").unwrap();
+        scene
+            .set_property(part, "Visible", PropertyValue::Bool(false))
+            .unwrap();
+
+        let document = scene.to_document().unwrap();
+
+        assert_eq!(
+            document.root.properties.keys().collect::<Vec<_>>(),
+            vec!["Name", "Transform.Position", "Visible"]
+        );
+    }
+
+    #[test]
+    fn scene_document_rejects_missing_root() {
+        let scene = Scene::new();
+
+        assert_eq!(scene.to_document().unwrap_err(), SceneError::MissingRoot);
+    }
+
+    #[test]
+    fn scene_document_rejects_duplicate_guids() {
+        let document = SceneDocument::new(
+            SceneInstanceDocument::new(InstanceGuid::new(1), ROOT_CLASS_NAME, "Game")
+                .with_children(vec![SceneInstanceDocument::new(
+                    InstanceGuid::new(1),
+                    "Workspace",
+                    "Workspace",
+                )]),
+        );
+
+        assert_eq!(
+            Scene::from_document(
+                InstanceClassRegistry::with_default_scene_classes().unwrap(),
+                document
+            )
+            .unwrap_err(),
+            SceneError::DuplicateInstanceGuid {
+                guid: InstanceGuid::new(1)
+            }
+        );
+    }
+
+    #[test]
+    fn scene_document_rejects_unknown_classes_and_invalid_properties() {
+        let unknown_class = SceneDocument::new(SceneInstanceDocument::new(
+            InstanceGuid::new(1),
+            "MissingClass",
+            "Game",
+        ));
+        assert_eq!(
+            Scene::from_document(
+                InstanceClassRegistry::with_default_scene_classes().unwrap(),
+                unknown_class
+            )
+            .unwrap_err(),
+            SceneError::UnknownClass {
+                class_name: "MissingClass".to_owned()
+            }
+        );
+
+        let mut unknown_property = BTreeMap::new();
+        unknown_property.insert(
+            "Missing".to_owned(),
+            PropertyValue::String("value".to_owned()),
+        );
+        let document = SceneDocument::new(
+            SceneInstanceDocument::new(InstanceGuid::new(1), ROOT_CLASS_NAME, "Game")
+                .with_properties(unknown_property),
+        );
+        assert_eq!(
+            Scene::from_document(
+                InstanceClassRegistry::with_default_scene_classes().unwrap(),
+                document
+            )
+            .unwrap_err(),
+            SceneError::UnknownProperty {
+                class_name: ROOT_CLASS_NAME.to_owned(),
+                property_path: "Missing".to_owned()
+            }
+        );
+
+        let mut mismatched_property = BTreeMap::new();
+        mismatched_property.insert("Name".to_owned(), PropertyValue::Bool(true));
+        let document = SceneDocument::new(
+            SceneInstanceDocument::new(InstanceGuid::new(1), ROOT_CLASS_NAME, "Game")
+                .with_properties(mismatched_property),
+        );
+        assert_eq!(
+            Scene::from_document(
+                InstanceClassRegistry::with_default_scene_classes().unwrap(),
+                document
+            )
+            .unwrap_err(),
+            SceneError::PropertyTypeMismatch {
+                property_path: "Name".to_owned(),
+                expected: PropertyType::String,
+                actual: PropertyType::Bool
+            }
+        );
     }
 
     #[test]
