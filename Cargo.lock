@@ -48,6 +48,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "kinetik-project"
+version = "0.0.0"
+dependencies = [
+ "kinetik-core",
+ "kinetik-resource",
+]
+
+[[package]]
 name = "kinetik-reflect"
 version = "0.0.0"
 dependencies = [

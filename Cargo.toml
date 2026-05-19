@@ -4,6 +4,7 @@ members = [
     "crates/kinetik-app",
     "crates/kinetik-scene",
     "crates/kinetik-resource",
+    "crates/kinetik-project",
     "crates/kinetik-render",
     "crates/kinetik-script",
     "crates/kinetik-script-luau",
