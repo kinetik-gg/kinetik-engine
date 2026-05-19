@@ -1,9 +1,12 @@
 //! Scene and instance graph contracts for Kinetik.
 
 use core::fmt;
+use std::collections::BTreeMap;
 
 use kinetik_core::{InstanceGuid, InstanceId};
-use kinetik_reflect::{PropertyDescriptor, PropertyType};
+use kinetik_reflect::{
+    PropertyDefault, PropertyDescriptor, PropertyType, PropertyValue, ValueError,
+};
 
 /// Root class name required by the default scene model.
 pub const ROOT_CLASS_NAME: &str = "Game";
@@ -240,6 +243,38 @@ pub enum SceneError {
         /// Invalid or missing scene path.
         path: String,
     },
+    /// Property path is not reflected by the instance class.
+    UnknownProperty {
+        /// Registered instance class name.
+        class_name: String,
+        /// Missing canonical property path.
+        property_path: String,
+    },
+    /// Reflected property descriptor was invalid.
+    InvalidPropertyDescriptor {
+        /// Registered instance class name.
+        class_name: String,
+        /// Canonical property path.
+        property_path: String,
+        /// Descriptor validation failure.
+        reason: String,
+    },
+    /// Reflected property type has no neutral default value.
+    MissingPropertyDefault {
+        /// Canonical property path.
+        property_path: String,
+        /// Reflected value type.
+        value_type: PropertyType,
+    },
+    /// Reflected property value did not match the descriptor type.
+    PropertyTypeMismatch {
+        /// Canonical property path.
+        property_path: String,
+        /// Expected descriptor type.
+        expected: PropertyType,
+        /// Actual value type.
+        actual: PropertyType,
+    },
 }
 
 impl fmt::Display for SceneError {
@@ -264,6 +299,36 @@ impl fmt::Display for SceneError {
                 )
             }
             Self::InvalidPath { path } => write!(f, "scene path is invalid or not found: {path}"),
+            Self::UnknownProperty {
+                class_name,
+                property_path,
+            } => write!(
+                f,
+                "property {property_path} is not reflected by instance class {class_name}"
+            ),
+            Self::InvalidPropertyDescriptor {
+                class_name,
+                property_path,
+                reason,
+            } => write!(
+                f,
+                "property descriptor {class_name}.{property_path} is invalid: {reason}"
+            ),
+            Self::MissingPropertyDefault {
+                property_path,
+                value_type,
+            } => write!(
+                f,
+                "property {property_path} has no default value for reflected type {value_type}"
+            ),
+            Self::PropertyTypeMismatch {
+                property_path,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "property {property_path} expected value type {expected}, got {actual}"
+            ),
         }
     }
 }
@@ -271,7 +336,7 @@ impl fmt::Display for SceneError {
 impl std::error::Error for SceneError {}
 
 /// Instance record stored by a scene.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InstanceRecord {
     /// Runtime instance ID.
     pub id: InstanceId,
@@ -285,6 +350,8 @@ pub struct InstanceRecord {
     pub parent: Option<InstanceId>,
     /// Ordered child runtime instance IDs.
     pub children: Vec<InstanceId>,
+    /// Reflected property values keyed by canonical property path.
+    pub properties: BTreeMap<String, PropertyValue>,
 }
 
 /// In-memory scene hierarchy.
@@ -454,6 +521,74 @@ impl Scene {
         Ok(&self.get(id)?.children)
     }
 
+    /// Returns reflected properties for an instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SceneError::InvalidInstanceId`] when the instance ID is not present.
+    pub fn properties(&self, id: InstanceId) -> SceneResult<&BTreeMap<String, PropertyValue>> {
+        Ok(&self.get(id)?.properties)
+    }
+
+    /// Returns a reflected property value for an instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SceneError`] when the instance is missing or the property is
+    /// not reflected by the instance class.
+    pub fn get_property(&self, id: InstanceId, property_path: &str) -> SceneResult<&PropertyValue> {
+        let instance = self.get(id)?;
+        self.property_descriptor_for_class(&instance.class_name, property_path)?;
+        instance
+            .properties
+            .get(property_path)
+            .ok_or_else(|| SceneError::UnknownProperty {
+                class_name: instance.class_name.clone(),
+                property_path: property_path.to_owned(),
+            })
+    }
+
+    /// Sets a reflected property value for an instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SceneError`] when the instance is missing, the property is
+    /// unknown, or the value type does not match the reflected descriptor.
+    pub fn set_property(
+        &mut self,
+        id: InstanceId,
+        property_path: &str,
+        value: PropertyValue,
+    ) -> SceneResult<()> {
+        let index = self.index_of(id)?;
+        let class_name = self.instances[index].class_name.clone();
+        {
+            let descriptor = self.property_descriptor_for_class(&class_name, property_path)?;
+            value
+                .validate_for_descriptor(descriptor)
+                .map_err(|error| property_value_error(&class_name, property_path, error))?;
+        }
+
+        if let ("Name", PropertyValue::String(name)) = (property_path, &value) {
+            validate_instance_name(name)?;
+        }
+
+        self.instances[index]
+            .properties
+            .insert(property_path.to_owned(), value);
+
+        if property_path == "Name" {
+            let Some(PropertyValue::String(name)) = self.instances[index].properties.get("Name")
+            else {
+                unreachable!("Name was validated as a string property");
+            };
+            let name = name.clone();
+            self.instances[index].name = name;
+        }
+
+        Ok(())
+    }
+
     fn create_record(
         &mut self,
         class_name: impl Into<String>,
@@ -462,8 +597,8 @@ impl Scene {
     ) -> SceneResult<InstanceId> {
         let class_name = class_name.into();
         let name = name.into();
-        self.validate_class(&class_name)?;
         validate_instance_name(&name)?;
+        let properties = default_properties_for_class(self.class_descriptor(&class_name)?, &name)?;
 
         let id = self.next_instance_id();
         let guid = self.next_instance_guid();
@@ -474,6 +609,7 @@ impl Scene {
             name,
             parent,
             children: Vec::new(),
+            properties,
         });
         Ok(id)
     }
@@ -510,13 +646,25 @@ impl Scene {
             .find(|child_id| self.get(*child_id).is_ok_and(|child| child.name == name))
     }
 
-    fn validate_class(&self, class_name: &str) -> SceneResult<()> {
-        if self.class_registry.contains(class_name) {
-            return Ok(());
-        }
-        Err(SceneError::UnknownClass {
-            class_name: class_name.to_owned(),
-        })
+    fn class_descriptor(&self, class_name: &str) -> SceneResult<&InstanceClassDescriptor> {
+        self.class_registry
+            .get(class_name)
+            .map_err(|_| SceneError::UnknownClass {
+                class_name: class_name.to_owned(),
+            })
+    }
+
+    fn property_descriptor_for_class(
+        &self,
+        class_name: &str,
+        property_path: &str,
+    ) -> SceneResult<&PropertyDescriptor> {
+        self.class_descriptor(class_name)?
+            .property(property_path)
+            .ok_or_else(|| SceneError::UnknownProperty {
+                class_name: class_name.to_owned(),
+                property_path: property_path.to_owned(),
+            })
     }
 
     fn index_of(&self, id: InstanceId) -> SceneResult<usize> {
@@ -570,9 +718,105 @@ fn path_parts(path: &str) -> SceneResult<Vec<&str>> {
     Ok(parts)
 }
 
+fn default_properties_for_class(
+    class_descriptor: &InstanceClassDescriptor,
+    instance_name: &str,
+) -> SceneResult<BTreeMap<String, PropertyValue>> {
+    let mut properties = BTreeMap::new();
+    for descriptor in &class_descriptor.properties {
+        let value = default_property_value(class_descriptor, descriptor, instance_name)?;
+        properties.insert(descriptor.path.clone(), value);
+    }
+    Ok(properties)
+}
+
+fn default_property_value(
+    class_descriptor: &InstanceClassDescriptor,
+    descriptor: &PropertyDescriptor,
+    instance_name: &str,
+) -> SceneResult<PropertyValue> {
+    descriptor.validate().map_err(|error| {
+        invalid_property_descriptor(&class_descriptor.class_name, &descriptor.path, error)
+    })?;
+
+    if descriptor.path == "Name" && descriptor.value_type == PropertyType::String {
+        return Ok(PropertyValue::String(instance_name.to_owned()));
+    }
+
+    match &descriptor.default_value {
+        PropertyDefault::TypeDefault => {
+            PropertyValue::type_default(descriptor.value_type).map_err(|error| {
+                property_value_error(&class_descriptor.class_name, &descriptor.path, error)
+            })
+        }
+        PropertyDefault::Value(value) => {
+            value.validate_for_descriptor(descriptor).map_err(|error| {
+                property_value_error(&class_descriptor.class_name, &descriptor.path, error)
+            })?;
+            Ok(value.clone())
+        }
+    }
+}
+
+fn property_value_error(class_name: &str, property_path: &str, error: ValueError) -> SceneError {
+    match error {
+        ValueError::InvalidDescriptor(error) => {
+            invalid_property_descriptor(class_name, property_path, error)
+        }
+        ValueError::NoTypeDefault { value_type } => SceneError::MissingPropertyDefault {
+            property_path: property_path.to_owned(),
+            value_type,
+        },
+        ValueError::TypeMismatch {
+            path,
+            expected,
+            actual,
+        } => SceneError::PropertyTypeMismatch {
+            property_path: path,
+            expected,
+            actual,
+        },
+    }
+}
+
+fn invalid_property_descriptor(
+    class_name: &str,
+    property_path: &str,
+    error: impl fmt::Display,
+) -> SceneError {
+    SceneError::InvalidPropertyDescriptor {
+        class_name: class_name.to_owned(),
+        property_path: property_path.to_owned(),
+        reason: error.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn scene_with_part_class() -> Scene {
+        let mut registry = InstanceClassRegistry::with_default_scene_classes().unwrap();
+        registry
+            .register(
+                InstanceClassDescriptor::new("Part", "Part")
+                    .unwrap()
+                    .with_properties(vec![
+                        PropertyDescriptor::new("Name", "Name", PropertyType::String).unwrap(),
+                        PropertyDescriptor::new("Visible", "Visible", PropertyType::Bool)
+                            .unwrap()
+                            .with_default_value(PropertyDefault::Value(PropertyValue::Bool(true))),
+                        PropertyDescriptor::new(
+                            "Transform.Position",
+                            "Position",
+                            PropertyType::Vec3,
+                        )
+                        .unwrap(),
+                    ]),
+            )
+            .unwrap();
+        Scene::with_class_registry(registry)
+    }
 
     #[test]
     fn default_registry_contains_root_and_services_in_order() {
@@ -769,6 +1013,121 @@ mod tests {
             scene.add_child(game, "Workspace", "Bad/Name").unwrap_err(),
             SceneError::InvalidInstanceName {
                 name: "Bad/Name".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn instance_properties_start_with_descriptor_defaults() {
+        let mut scene = scene_with_part_class();
+        let part = scene.add_root("Part", "Block").unwrap();
+
+        assert_eq!(
+            scene.get_property(part, "Name").unwrap(),
+            &PropertyValue::String("Block".to_owned())
+        );
+        assert_eq!(
+            scene.get_property(part, "Visible").unwrap(),
+            &PropertyValue::Bool(true)
+        );
+        assert_eq!(
+            scene.get_property(part, "Transform.Position").unwrap(),
+            &PropertyValue::Vec3(kinetik_core::Vec3::ZERO)
+        );
+        assert_eq!(
+            scene.properties(part).unwrap().keys().collect::<Vec<_>>(),
+            vec!["Name", "Transform.Position", "Visible"]
+        );
+    }
+
+    #[test]
+    fn set_property_validates_and_stores_values() {
+        let mut scene = scene_with_part_class();
+        let part = scene.add_root("Part", "Block").unwrap();
+
+        scene
+            .set_property(part, "Visible", PropertyValue::Bool(false))
+            .unwrap();
+        scene
+            .set_property(
+                part,
+                "Transform.Position",
+                PropertyValue::Vec3(kinetik_core::Vec3::new(1.0, 2.0, 3.0)),
+            )
+            .unwrap();
+
+        assert_eq!(
+            scene.get_property(part, "Visible").unwrap(),
+            &PropertyValue::Bool(false)
+        );
+        assert_eq!(
+            scene.get_property(part, "Transform.Position").unwrap(),
+            &PropertyValue::Vec3(kinetik_core::Vec3::new(1.0, 2.0, 3.0))
+        );
+    }
+
+    #[test]
+    fn name_property_updates_instance_name_and_path() {
+        let mut scene = Scene::new();
+        let game = scene.add_root(ROOT_CLASS_NAME, "Game").unwrap();
+        let workspace = scene.add_child(game, "Workspace", "Workspace").unwrap();
+
+        scene
+            .set_property(
+                workspace,
+                "Name",
+                PropertyValue::String("WorldRoot".to_owned()),
+            )
+            .unwrap();
+
+        assert_eq!(scene.get(workspace).unwrap().name, "WorldRoot");
+        assert_eq!(scene.path(workspace).unwrap(), "/Game/WorldRoot");
+        assert_eq!(
+            scene.get_property(workspace, "Name").unwrap(),
+            &PropertyValue::String("WorldRoot".to_owned())
+        );
+    }
+
+    #[test]
+    fn property_storage_rejects_unknown_and_noncanonical_paths() {
+        let mut scene = scene_with_part_class();
+        let part = scene.add_root("Part", "Block").unwrap();
+
+        assert_eq!(
+            scene.get_property(part, "visible").unwrap_err(),
+            SceneError::UnknownProperty {
+                class_name: "Part".to_owned(),
+                property_path: "visible".to_owned()
+            }
+        );
+        assert_eq!(
+            scene
+                .set_property(
+                    part,
+                    "Transform.position",
+                    PropertyValue::Vec3(kinetik_core::Vec3::ZERO)
+                )
+                .unwrap_err(),
+            SceneError::UnknownProperty {
+                class_name: "Part".to_owned(),
+                property_path: "Transform.position".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn property_storage_rejects_type_mismatches() {
+        let mut scene = scene_with_part_class();
+        let part = scene.add_root("Part", "Block").unwrap();
+
+        assert_eq!(
+            scene
+                .set_property(part, "Visible", PropertyValue::String("yes".to_owned()))
+                .unwrap_err(),
+            SceneError::PropertyTypeMismatch {
+                property_path: "Visible".to_owned(),
+                expected: PropertyType::Bool,
+                actual: PropertyType::String
             }
         );
     }
