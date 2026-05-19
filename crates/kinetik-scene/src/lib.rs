@@ -3,9 +3,9 @@
 use core::fmt;
 use std::collections::{BTreeMap, BTreeSet};
 
-use kinetik_core::{InstanceGuid, InstanceId};
+use kinetik_core::{InstanceGuid, InstanceId, Vec3};
 use kinetik_reflect::{
-    PropertyDefault, PropertyDescriptor, PropertyType, PropertyValue, ValueError,
+    EditorHint, PropertyDefault, PropertyDescriptor, PropertyType, PropertyValue, ValueError,
 };
 
 /// Root class name required by the default scene model.
@@ -24,6 +24,24 @@ pub const DEFAULT_SERVICE_CLASS_NAMES: [&str; 9] = [
     "Packages",
 ];
 
+/// Approved M7 built-in 3D class names registered after default services.
+pub const BUILT_IN_3D_CLASS_NAMES: [&str; 5] = ["Folder", "Node3D", "Part", "Camera3D", "Light3D"];
+
+/// Class-level capabilities used by authoring, validation, and later systems.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum InstanceClassCapability {
+    /// Can contain child instances as an organization node.
+    Container,
+    /// Owns editable local transform properties.
+    Spatial,
+    /// Represents renderable scene content.
+    Renderable,
+    /// Represents a camera viewpoint.
+    Camera,
+    /// Represents a light source.
+    Light,
+}
+
 /// Class-level scene instance metadata.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InstanceClassDescriptor {
@@ -31,6 +49,8 @@ pub struct InstanceClassDescriptor {
     pub class_name: String,
     /// Human-readable display name.
     pub display_name: String,
+    /// Stable class capability flags.
+    pub capabilities: Vec<InstanceClassCapability>,
     /// Class-level reflected property descriptors.
     pub properties: Vec<PropertyDescriptor>,
 }
@@ -50,8 +70,16 @@ impl InstanceClassDescriptor {
         Ok(Self {
             display_name: display_name.into(),
             class_name,
+            capabilities: Vec::new(),
             properties: Vec::new(),
         })
+    }
+
+    /// Adds class-level capability flags.
+    #[must_use]
+    pub fn with_capabilities(mut self, capabilities: Vec<InstanceClassCapability>) -> Self {
+        self.capabilities = capabilities;
+        self
     }
 
     /// Adds class-level reflected property descriptors.
@@ -67,6 +95,12 @@ impl InstanceClassDescriptor {
         self.properties
             .iter()
             .find(|descriptor| descriptor.path == path)
+    }
+
+    /// Returns whether the descriptor has `capability`.
+    #[must_use]
+    pub fn has_capability(&self, capability: InstanceClassCapability) -> bool {
+        self.capabilities.contains(&capability)
     }
 }
 
@@ -134,6 +168,9 @@ impl InstanceClassRegistry {
         for class_name in DEFAULT_SERVICE_CLASS_NAMES {
             registry.register(default_class_descriptor(class_name)?)?;
         }
+        for descriptor in built_in_3d_class_descriptors()? {
+            registry.register(descriptor)?;
+        }
         Ok(registry)
     }
 
@@ -192,12 +229,68 @@ impl InstanceClassRegistry {
 }
 
 fn default_class_descriptor(class_name: &str) -> ClassRegistryResult<InstanceClassDescriptor> {
-    Ok(
-        InstanceClassDescriptor::new(class_name, class_name)?.with_properties(vec![
-            PropertyDescriptor::new("Name", "Name", PropertyType::String)
-                .expect("built-in Name descriptor should be valid"),
-        ]),
-    )
+    Ok(InstanceClassDescriptor::new(class_name, class_name)?
+        .with_properties(vec![name_property_descriptor()]))
+}
+
+fn built_in_3d_class_descriptors() -> ClassRegistryResult<Vec<InstanceClassDescriptor>> {
+    Ok(vec![
+        InstanceClassDescriptor::new("Folder", "Folder")?
+            .with_capabilities(vec![InstanceClassCapability::Container])
+            .with_properties(vec![
+                name_property_descriptor(),
+                visible_property_descriptor(),
+            ]),
+        spatial_descriptor("Node3D", "Node3D", Vec::new())?,
+        spatial_descriptor("Part", "Part", vec![InstanceClassCapability::Renderable])?,
+        spatial_descriptor(
+            "Camera3D",
+            "Camera3D",
+            vec![InstanceClassCapability::Camera],
+        )?,
+        spatial_descriptor("Light3D", "Light3D", vec![InstanceClassCapability::Light])?,
+    ])
+}
+
+fn spatial_descriptor(
+    class_name: &str,
+    display_name: &str,
+    mut extra_capabilities: Vec<InstanceClassCapability>,
+) -> ClassRegistryResult<InstanceClassDescriptor> {
+    let mut capabilities = vec![InstanceClassCapability::Spatial];
+    capabilities.append(&mut extra_capabilities);
+    Ok(InstanceClassDescriptor::new(class_name, display_name)?
+        .with_capabilities(capabilities)
+        .with_properties(shared_spatial_properties()))
+}
+
+fn shared_spatial_properties() -> Vec<PropertyDescriptor> {
+    vec![
+        name_property_descriptor(),
+        visible_property_descriptor(),
+        PropertyDescriptor::new("Transform.Position", "Position", PropertyType::Vec3)
+            .expect("built-in Transform.Position descriptor should be valid")
+            .with_editor_hint(EditorHint::Advanced),
+        PropertyDescriptor::new("Transform.Rotation", "Rotation", PropertyType::Quat)
+            .expect("built-in Transform.Rotation descriptor should be valid")
+            .with_editor_hint(EditorHint::Angle),
+        PropertyDescriptor::new("Transform.Scale", "Scale", PropertyType::Vec3)
+            .expect("built-in Transform.Scale descriptor should be valid")
+            .with_default_value(PropertyDefault::Value(PropertyValue::Vec3(Vec3::ONE)))
+            .with_editor_hint(EditorHint::Advanced),
+    ]
+}
+
+fn name_property_descriptor() -> PropertyDescriptor {
+    PropertyDescriptor::new("Name", "Name", PropertyType::String)
+        .expect("built-in Name descriptor should be valid")
+}
+
+fn visible_property_descriptor() -> PropertyDescriptor {
+    PropertyDescriptor::new("Visible", "Visible", PropertyType::Bool)
+        .expect("built-in Visible descriptor should be valid")
+        .with_default_value(PropertyDefault::Value(PropertyValue::Bool(true)))
+        .with_editor_hint(EditorHint::Checkbox)
 }
 
 fn validate_class_name(class_name: &str) -> ClassRegistryResult<()> {
@@ -1292,30 +1385,11 @@ mod tests {
     use super::*;
 
     fn scene_with_part_class() -> Scene {
-        let mut registry = InstanceClassRegistry::with_default_scene_classes().unwrap();
-        registry
-            .register(
-                InstanceClassDescriptor::new("Part", "Part")
-                    .unwrap()
-                    .with_properties(vec![
-                        PropertyDescriptor::new("Name", "Name", PropertyType::String).unwrap(),
-                        PropertyDescriptor::new("Visible", "Visible", PropertyType::Bool)
-                            .unwrap()
-                            .with_default_value(PropertyDefault::Value(PropertyValue::Bool(true))),
-                        PropertyDescriptor::new(
-                            "Transform.Position",
-                            "Position",
-                            PropertyType::Vec3,
-                        )
-                        .unwrap(),
-                    ]),
-            )
-            .unwrap();
-        Scene::with_class_registry(registry)
+        Scene::new()
     }
 
     #[test]
-    fn default_registry_contains_root_and_services_in_order() {
+    fn default_registry_contains_root_services_and_3d_classes_in_order() {
         let registry = InstanceClassRegistry::with_default_scene_classes().unwrap();
 
         assert_eq!(
@@ -1331,9 +1405,14 @@ mod tests {
                 "Physics",
                 "Assets",
                 "Packages",
+                "Folder",
+                "Node3D",
+                "Part",
+                "Camera3D",
+                "Light3D",
             ]
         );
-        assert_eq!(registry.descriptors().len(), 10);
+        assert_eq!(registry.descriptors().len(), 15);
     }
 
     #[test]
@@ -1349,6 +1428,38 @@ mod tests {
 
         let workspace = registry.get("Workspace").unwrap();
         assert_eq!(workspace.class_name, "Workspace");
+    }
+
+    #[test]
+    fn built_in_3d_classes_expose_capabilities_and_shared_properties() {
+        let registry = InstanceClassRegistry::with_default_scene_classes().unwrap();
+
+        let folder = registry.get("Folder").unwrap();
+        assert!(folder.has_capability(InstanceClassCapability::Container));
+        assert!(!folder.has_capability(InstanceClassCapability::Spatial));
+        assert!(folder.property("Visible").is_some());
+
+        let part = registry.get("Part").unwrap();
+        assert!(part.has_capability(InstanceClassCapability::Spatial));
+        assert!(part.has_capability(InstanceClassCapability::Renderable));
+        assert_eq!(
+            part.property("Transform.Position").unwrap().value_type,
+            PropertyType::Vec3
+        );
+        assert_eq!(
+            part.property("Transform.Rotation").unwrap().value_type,
+            PropertyType::Quat
+        );
+        assert_eq!(
+            part.property("Transform.Scale").unwrap().value_type,
+            PropertyType::Vec3
+        );
+
+        let camera = registry.get("Camera3D").unwrap();
+        assert!(camera.has_capability(InstanceClassCapability::Camera));
+
+        let light = registry.get("Light3D").unwrap();
+        assert!(light.has_capability(InstanceClassCapability::Light));
     }
 
     #[test]
@@ -1434,11 +1545,7 @@ mod tests {
 
     #[test]
     fn nested_paths_resolve_through_ordered_children() {
-        let mut registry = InstanceClassRegistry::with_default_scene_classes().unwrap();
-        registry
-            .register(InstanceClassDescriptor::new("Folder", "Folder").unwrap())
-            .unwrap();
-        let mut scene = Scene::with_class_registry(registry);
+        let mut scene = Scene::new();
 
         let game = scene.add_root(ROOT_CLASS_NAME, "Game").unwrap();
         let workspace = scene.add_child(game, "Workspace", "Workspace").unwrap();
@@ -1531,8 +1638,22 @@ mod tests {
             &PropertyValue::Vec3(kinetik_core::Vec3::ZERO)
         );
         assert_eq!(
+            scene.get_property(part, "Transform.Rotation").unwrap(),
+            &PropertyValue::Quat(kinetik_core::Quat::IDENTITY)
+        );
+        assert_eq!(
+            scene.get_property(part, "Transform.Scale").unwrap(),
+            &PropertyValue::Vec3(kinetik_core::Vec3::ONE)
+        );
+        assert_eq!(
             scene.properties(part).unwrap().keys().collect::<Vec<_>>(),
-            vec!["Name", "Transform.Position", "Visible"]
+            vec![
+                "Name",
+                "Transform.Position",
+                "Transform.Rotation",
+                "Transform.Scale",
+                "Visible"
+            ]
         );
     }
 
@@ -1551,6 +1672,13 @@ mod tests {
                 PropertyValue::Vec3(kinetik_core::Vec3::new(1.0, 2.0, 3.0)),
             )
             .unwrap();
+        scene
+            .set_property(
+                part,
+                "Transform.Scale",
+                PropertyValue::Vec3(kinetik_core::Vec3::new(2.0, 2.0, 2.0)),
+            )
+            .unwrap();
 
         assert_eq!(
             scene.get_property(part, "Visible").unwrap(),
@@ -1559,6 +1687,10 @@ mod tests {
         assert_eq!(
             scene.get_property(part, "Transform.Position").unwrap(),
             &PropertyValue::Vec3(kinetik_core::Vec3::new(1.0, 2.0, 3.0))
+        );
+        assert_eq!(
+            scene.get_property(part, "Transform.Scale").unwrap(),
+            &PropertyValue::Vec3(kinetik_core::Vec3::new(2.0, 2.0, 2.0))
         );
     }
 
@@ -1833,7 +1965,13 @@ mod tests {
 
         assert_eq!(
             document.root.properties.keys().collect::<Vec<_>>(),
-            vec!["Name", "Transform.Position", "Visible"]
+            vec![
+                "Name",
+                "Transform.Position",
+                "Transform.Rotation",
+                "Transform.Scale",
+                "Visible"
+            ]
         );
     }
 
