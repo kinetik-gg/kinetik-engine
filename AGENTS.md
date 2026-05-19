@@ -67,6 +67,81 @@ Architecture-sensitive areas include:
 If no relevant ADR exists and the task would set lasting direction, ask whether
 to create one before implementing.
 
+## Implementation Levels
+
+Every issue should declare an implementation level.
+
+- Level 0: Docs/planning only.
+- Level 1: Boilerplate or scaffold.
+- Level 2: Deterministic core logic.
+- Level 3: Cross-crate integration slice.
+- Level 4: Runtime/editor behavior.
+- Level 5: Visual, interaction, feel, or UX.
+
+Level 2 is the default for engine code. Escalate when a task crosses crate
+boundaries, changes serialization, affects editor/runtime behavior, or requires
+human visual judgment.
+
+Each issue should state:
+
+```text
+Implementation level:
+Required tests/checks:
+Human verification:
+```
+
+## Automation Protocol
+
+Automate as much verification as practical, but use the right layer for the
+task.
+
+Preferred verification order:
+
+1. Rust unit tests for deterministic logic.
+2. Integration tests and fixtures for cross-crate behavior.
+3. Golden fixtures for serialization, manifests, generated output, and stable
+   diagnostics.
+4. Headless runtime/editor tests when available.
+5. MCP-driven editor/runtime tests when the MCP server exists.
+6. Screenshot or visual regression checks for UI, viewport, rendering, and
+   editor interaction.
+7. Human review for gameplay feel, visual taste, animation timing, and UX
+   judgment.
+
+MCP should become the primary semantic automation harness for editor and runtime
+work. Prefer MCP commands over pixel-level automation when both are available.
+
+Useful MCP test capabilities should include:
+
+```text
+project.open
+project.create_temp
+scene.list_instances
+scene.create_instance
+scene.set_property
+diagnostics.list
+play.start
+play.step
+play.stop
+editor.get_dirty_state
+editor.get_selection
+editor.capture_viewport
+```
+
+Computer-use or OS-level UI automation is a fallback for app launch, menu/button
+smoke tests, screenshots, and final UI verification. Do not rely on pixel-level
+automation when a semantic API, fixture, unit test, integration test, or MCP
+command can verify the behavior more directly.
+
+Level guidance:
+
+- Level 0: relevant docs/ADR consistency checks.
+- Level 1: `cargo fmt --check` and `cargo test --workspace`.
+- Level 2: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`.
+- Level 3: Level 2 checks plus integration tests, fixtures, golden files, or `cargo doc --workspace --no-deps` when public APIs changed.
+- Level 4: Level 3 checks plus lifecycle/order/command/diagnostic tests and MCP or headless runtime/editor smoke when available.
+- Level 5: Level 4 checks plus screenshot/visual verification and human review.
+
 ## Commit Style
 
 Use Conventional Commits for commit messages:

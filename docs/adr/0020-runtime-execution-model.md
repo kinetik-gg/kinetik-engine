@@ -29,10 +29,10 @@ Initial runtime direction:
 Initial script lifecycle:
 
 ```lua
-function ready() end
-function update(dt: number) end
-function physics_update(dt: number) end
-function exit() end
+function Ready() end
+function Update(dt: number) end
+function PhysicsUpdate(dt: number) end
+function Exit() end
 ```
 
 ## Consequences

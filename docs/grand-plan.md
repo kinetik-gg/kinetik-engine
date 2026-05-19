@@ -1168,7 +1168,7 @@ offset_transform
 
 ```text
 1. Process input/events
-2. Run update(dt)
+2. Run Update(dt)
 3. Apply queued transform/physics commands
 4. Run fixed physics step
 5. Sync physics results to scene transforms
@@ -1198,7 +1198,7 @@ local hit = physics.raycast({
 Kinetik should provide a friendly `CharacterBody3D`.
 
 ```lua
-function physics_update(dt: number)
+function PhysicsUpdate(dt: number)
     local move = input.get_vector("left", "right", "forward", "back")
     self.character:move_and_slide(Vec3.new(move.x, 0, move.y) * 6.0)
 end
@@ -1494,16 +1494,16 @@ instance:look_at(target)
 ### 14.7 Lifecycle
 
 ```lua
-function ready()
+function Ready()
 end
 
-function update(dt: number)
+function Update(dt: number)
 end
 
-function physics_update(dt: number)
+function PhysicsUpdate(dt: number)
 end
 
-function exit()
+function Exit()
 end
 ```
 

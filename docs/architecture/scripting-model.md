@@ -18,6 +18,7 @@ time
 tasks
 debug
 mathf
+script
 ```
 
 Core types:
@@ -36,13 +37,13 @@ Aabb
 Lifecycle:
 
 ```lua
-function ready() end
-function update(dt: number) end
-function physics_update(dt: number) end
-function exit() end
+function Ready() end
+function Update(dt: number) end
+function PhysicsUpdate(dt: number) end
+function Exit() end
 ```
 
-`update(dt)` runs in the variable frame phase. `physics_update(dt)` runs during
+`Update(dt)` runs in the variable frame phase. `PhysicsUpdate(dt)` runs during
 fixed simulation steps. Structural changes requested from scripts may be queued
 until a safe runtime sync point.
 
@@ -56,3 +57,7 @@ Script-visible instance properties should be generated from runtime-owned
 reflection metadata. Reflection and serialization keep canonical PascalCase
 property paths; Luau may add idiomatic aliases only when they map clearly back to
 canonical reflected properties.
+
+Public Luau APIs should favor Roblox/Luau familiarity: PascalCase properties and
+methods, colon method calls, service globals, and RBXScriptSignal-like events
+with `Connect` and `Disconnect`.

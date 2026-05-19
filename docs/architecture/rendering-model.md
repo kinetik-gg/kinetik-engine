@@ -7,11 +7,16 @@ Renderer principle:
 Initial renderer:
 
 - wgpu.
-- Forward renderer first.
+- Simple forward subset first, without blocking Forward+/clustered lighting.
 - Practical metallic/roughness PBR.
 - StandardMaterial.
+- Render graph direction.
 - HDR target, tone mapping, gamma correctness.
+- Shadows, environment lighting, and image-based lighting direction.
 - Shader graph later compiles to WGSL surface functions.
+- Runtime scene state and GPU render state remain separated by render extraction.
+- The editor viewport should use the runtime renderer path where practical.
+- Rendering failures produce structured diagnostics.
 
 Shader graph pipeline:
 

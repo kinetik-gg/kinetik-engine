@@ -23,7 +23,7 @@ Initial principles:
 
 - Runtime frame order is deterministic.
 - Variable frame update and fixed timestep simulation are separate.
-- Script `update(dt)` and `physics_update(fixed_dt)` are distinct lifecycle
+- Script `Update(dt)` and `PhysicsUpdate(fixed_dt)` are distinct lifecycle
   hooks.
 - Signals/events are delivered at deterministic flush points.
 - Runtime-spawned and despawned instances are applied at safe sync points, not
@@ -40,9 +40,9 @@ shape:
 1. Poll platform and input.
 2. Begin frame diagnostics/log scope.
 3. Apply queued structural changes from prior safe points.
-4. Run variable script update(dt).
+4. Run variable script Update(dt).
 5. Run zero or more fixed simulation steps:
-   - run physics_update(fixed_dt)
+   - run PhysicsUpdate(fixed_dt)
    - step physics
    - collect collision/physics events
    - flush fixed-step signals/events
