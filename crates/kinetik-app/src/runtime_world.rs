@@ -1,0 +1,540 @@
+use core::{fmt, num::NonZeroU64};
+
+use kinetik_core::InstanceGuid;
+use kinetik_scene::{Scene, SceneError, SceneInstanceDocument};
+
+/// Runtime world ID.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct RuntimeWorldId(NonZeroU64);
+
+impl RuntimeWorldId {
+    /// Creates a runtime world ID from a non-zero raw value.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `raw` is zero.
+    #[must_use]
+    pub const fn new(raw: u64) -> Self {
+        let Some(raw) = NonZeroU64::new(raw) else {
+            panic!("RuntimeWorldId raw value must be non-zero");
+        };
+        Self(raw)
+    }
+
+    /// Returns the raw non-zero ID value.
+    #[must_use]
+    pub const fn raw(self) -> u64 {
+        self.0.get()
+    }
+}
+
+impl fmt::Display for RuntimeWorldId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "RuntimeWorldId({})", self.raw())
+    }
+}
+
+/// Runtime instance ID owned by a runtime world.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct RuntimeInstanceId(NonZeroU64);
+
+impl RuntimeInstanceId {
+    /// Creates a runtime instance ID from a non-zero raw value.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `raw` is zero.
+    #[must_use]
+    pub const fn new(raw: u64) -> Self {
+        let Some(raw) = NonZeroU64::new(raw) else {
+            panic!("RuntimeInstanceId raw value must be non-zero");
+        };
+        Self(raw)
+    }
+
+    /// Returns the raw non-zero ID value.
+    #[must_use]
+    pub const fn raw(self) -> u64 {
+        self.0.get()
+    }
+}
+
+impl fmt::Display for RuntimeInstanceId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "RuntimeInstanceId({})", self.raw())
+    }
+}
+
+/// Runtime instance cloned from edit scene state or spawned during play.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeInstanceRecord {
+    /// Runtime-only instance ID.
+    pub id: RuntimeInstanceId,
+    /// Stable edit GUID when this runtime instance came from saved edit state.
+    pub edit_guid: Option<InstanceGuid>,
+    /// Registered class name cloned from edit state.
+    pub class_name: String,
+    /// Runtime display name cloned from edit state.
+    pub name: String,
+    /// Runtime parent ID.
+    pub parent: Option<RuntimeInstanceId>,
+    /// Ordered runtime child IDs.
+    pub children: Vec<RuntimeInstanceId>,
+}
+
+/// Result type for runtime world operations.
+pub type RuntimeWorldResult<T> = Result<T, RuntimeWorldError>;
+
+/// Errors returned by runtime world operations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RuntimeWorldError {
+    /// Runtime child spawn was requested under a missing parent.
+    MissingParent {
+        /// Missing parent ID.
+        parent: RuntimeInstanceId,
+    },
+    /// Runtime instance ID was not present in the world.
+    InvalidInstance {
+        /// Invalid runtime instance ID.
+        id: RuntimeInstanceId,
+    },
+    /// Runtime instance class name was empty.
+    EmptyClassName,
+    /// Runtime instance name was empty or contained a path separator.
+    InvalidInstanceName {
+        /// Invalid runtime instance name.
+        name: String,
+    },
+    /// Runtime root cannot be despawned.
+    CannotDespawnRoot {
+        /// Root runtime instance ID.
+        root: RuntimeInstanceId,
+    },
+}
+
+impl fmt::Display for RuntimeWorldError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingParent { parent } => {
+                write!(f, "runtime parent instance is missing: {parent}")
+            }
+            Self::InvalidInstance { id } => write!(f, "runtime instance is missing: {id}"),
+            Self::EmptyClassName => f.write_str("runtime instance class name must not be empty"),
+            Self::InvalidInstanceName { name } => write!(
+                f,
+                "runtime instance name must be non-empty and must not contain '/': {name}"
+            ),
+            Self::CannotDespawnRoot { root } => {
+                write!(f, "runtime root instance cannot be despawned: {root}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for RuntimeWorldError {}
+
+/// Sandboxed runtime world derived from edit scene state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeWorld {
+    id: RuntimeWorldId,
+    instances: Vec<RuntimeInstanceRecord>,
+    root: Option<RuntimeInstanceId>,
+    next_instance_id: u64,
+}
+
+impl RuntimeWorld {
+    /// Creates a runtime world clone from an edit scene.
+    ///
+    /// Runtime IDs are owned by the runtime world and edit GUIDs are retained
+    /// only as provenance for saved instances.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SceneError`] when the edit scene cannot be exported as a scene
+    /// document, such as when it has no root.
+    pub fn clone_from_edit_scene(id: RuntimeWorldId, scene: &Scene) -> Result<Self, SceneError> {
+        let document = scene.to_document()?;
+        let mut world = Self {
+            id,
+            instances: Vec::new(),
+            root: None,
+            next_instance_id: 1,
+        };
+        let root = world.clone_document_instance(document.root, None);
+        world.root = Some(root);
+        Ok(world)
+    }
+
+    /// Returns this runtime world's ID.
+    #[must_use]
+    pub const fn id(&self) -> RuntimeWorldId {
+        self.id
+    }
+
+    /// Returns the root runtime instance ID when present.
+    #[must_use]
+    pub const fn root_id(&self) -> Option<RuntimeInstanceId> {
+        self.root
+    }
+
+    /// Returns all runtime instances in deterministic parent-before-child order.
+    #[must_use]
+    pub fn instances(&self) -> &[RuntimeInstanceRecord] {
+        &self.instances
+    }
+
+    /// Returns a runtime instance by runtime ID.
+    #[must_use]
+    pub fn get(&self, id: RuntimeInstanceId) -> Option<&RuntimeInstanceRecord> {
+        self.instances.iter().find(|instance| instance.id == id)
+    }
+
+    /// Returns the runtime instance cloned from `edit_guid`, if any.
+    #[must_use]
+    pub fn runtime_id_for_edit_guid(&self, edit_guid: InstanceGuid) -> Option<RuntimeInstanceId> {
+        self.instances
+            .iter()
+            .find(|instance| instance.edit_guid == Some(edit_guid))
+            .map(|instance| instance.id)
+    }
+
+    /// Spawns a runtime-only child under `parent`.
+    ///
+    /// Runtime-only instances receive runtime identity but no saved edit GUID.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RuntimeWorldError`] when the parent is missing or the requested
+    /// class/name is invalid.
+    pub fn spawn_runtime_child(
+        &mut self,
+        parent: RuntimeInstanceId,
+        class_name: impl Into<String>,
+        name: impl Into<String>,
+    ) -> RuntimeWorldResult<RuntimeInstanceId> {
+        let class_name = class_name.into();
+        let name = name.into();
+        validate_runtime_class_name(&class_name)?;
+        validate_runtime_instance_name(&name)?;
+
+        let parent_index = self
+            .instance_index(parent)
+            .ok_or(RuntimeWorldError::MissingParent { parent })?;
+        let id = self.next_runtime_instance_id();
+        self.instances.push(RuntimeInstanceRecord {
+            id,
+            edit_guid: None,
+            class_name,
+            name,
+            parent: Some(parent),
+            children: Vec::new(),
+        });
+        self.instances[parent_index].children.push(id);
+        Ok(id)
+    }
+
+    /// Despawns a runtime instance and all of its runtime children.
+    ///
+    /// The returned IDs are ordered parent-before-child in the removed subtree.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RuntimeWorldError`] when the instance is missing or is the
+    /// runtime root.
+    pub fn despawn_runtime_subtree(
+        &mut self,
+        instance: RuntimeInstanceId,
+    ) -> RuntimeWorldResult<Vec<RuntimeInstanceId>> {
+        if self.root == Some(instance) {
+            return Err(RuntimeWorldError::CannotDespawnRoot { root: instance });
+        }
+        let record = self
+            .get(instance)
+            .ok_or(RuntimeWorldError::InvalidInstance { id: instance })?;
+        let parent = record.parent;
+        let mut removed = Vec::new();
+        self.collect_subtree_ids(instance, &mut removed);
+
+        if let Some(parent) = parent {
+            if let Some(parent_index) = self.instance_index(parent) {
+                self.instances[parent_index]
+                    .children
+                    .retain(|child| *child != instance);
+            }
+        }
+        self.instances
+            .retain(|record| !removed.contains(&record.id));
+        Ok(removed)
+    }
+
+    fn clone_document_instance(
+        &mut self,
+        document: SceneInstanceDocument,
+        parent: Option<RuntimeInstanceId>,
+    ) -> RuntimeInstanceId {
+        let id = self.next_runtime_instance_id();
+        let children = document.children;
+        let index = self.instances.len();
+        self.instances.push(RuntimeInstanceRecord {
+            id,
+            edit_guid: Some(document.guid),
+            class_name: document.class_name,
+            name: document.name,
+            parent,
+            children: Vec::new(),
+        });
+        let child_ids = children
+            .into_iter()
+            .map(|child| self.clone_document_instance(child, Some(id)))
+            .collect();
+        self.instances[index].children = child_ids;
+        id
+    }
+
+    fn next_runtime_instance_id(&mut self) -> RuntimeInstanceId {
+        let id = RuntimeInstanceId::new(self.next_instance_id);
+        self.next_instance_id += 1;
+        id
+    }
+
+    fn instance_index(&self, id: RuntimeInstanceId) -> Option<usize> {
+        self.instances.iter().position(|instance| instance.id == id)
+    }
+
+    fn collect_subtree_ids(&self, id: RuntimeInstanceId, output: &mut Vec<RuntimeInstanceId>) {
+        output.push(id);
+        let Some(instance) = self.get(id) else {
+            return;
+        };
+        for child in &instance.children {
+            self.collect_subtree_ids(*child, output);
+        }
+    }
+}
+
+fn validate_runtime_class_name(class_name: &str) -> RuntimeWorldResult<()> {
+    if class_name.trim().is_empty() {
+        return Err(RuntimeWorldError::EmptyClassName);
+    }
+    Ok(())
+}
+
+fn validate_runtime_instance_name(name: &str) -> RuntimeWorldResult<()> {
+    if name.trim().is_empty() || name.contains('/') {
+        return Err(RuntimeWorldError::InvalidInstanceName {
+            name: name.to_owned(),
+        });
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kinetik_scene::ROOT_CLASS_NAME;
+
+    #[test]
+    fn runtime_world_clone_preserves_edit_guid_mapping() {
+        let scene = kinetik_scene::Scene::default_scene().unwrap();
+        let document = scene.to_document().unwrap();
+        let world = RuntimeWorld::clone_from_edit_scene(RuntimeWorldId::new(1), &scene).unwrap();
+
+        assert_eq!(world.id(), RuntimeWorldId::new(1));
+        assert_eq!(world.root_id(), Some(RuntimeInstanceId::new(1)));
+        assert_eq!(
+            world.runtime_id_for_edit_guid(document.root.guid),
+            Some(RuntimeInstanceId::new(1))
+        );
+        assert_eq!(
+            world.get(RuntimeInstanceId::new(1)).unwrap().class_name,
+            ROOT_CLASS_NAME
+        );
+        assert_eq!(
+            world.get(RuntimeInstanceId::new(2)).unwrap().parent,
+            Some(RuntimeInstanceId::new(1))
+        );
+    }
+
+    #[test]
+    fn runtime_world_clone_uses_deterministic_parent_before_child_order() {
+        let scene = kinetik_scene::Scene::default_scene().unwrap();
+        let world = RuntimeWorld::clone_from_edit_scene(RuntimeWorldId::new(7), &scene).unwrap();
+        let names: Vec<&str> = world
+            .instances()
+            .iter()
+            .map(|instance| instance.name.as_str())
+            .collect();
+
+        assert_eq!(
+            names,
+            vec![
+                "Game",
+                "Workspace",
+                "Prefabs",
+                "Scripts",
+                "UI",
+                "Lighting",
+                "Audio",
+                "Physics",
+                "Assets",
+                "Packages",
+            ]
+        );
+        assert_eq!(
+            world.get(RuntimeInstanceId::new(1)).unwrap().children,
+            (2..=10).map(RuntimeInstanceId::new).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn runtime_world_clone_does_not_require_edit_instance_ids() {
+        let mut scene = kinetik_scene::Scene::new();
+        let root = scene.add_root(ROOT_CLASS_NAME, "Game").unwrap();
+        let node = scene.add_child(root, "Node3D", "Node").unwrap();
+        let edit_root_raw = root.raw();
+        let edit_node_raw = node.raw();
+
+        let world = RuntimeWorld::clone_from_edit_scene(RuntimeWorldId::new(3), &scene).unwrap();
+
+        assert_eq!(world.root_id().unwrap().raw(), 1);
+        assert_eq!(world.get(RuntimeInstanceId::new(2)).unwrap().name, "Node");
+        assert_eq!(edit_root_raw, 1);
+        assert_eq!(edit_node_raw, 2);
+        assert_ne!(
+            core::any::type_name::<RuntimeInstanceId>(),
+            core::any::type_name::<kinetik_core::InstanceId>()
+        );
+    }
+
+    #[test]
+    fn runtime_world_clone_requires_edit_scene_root() {
+        let scene = kinetik_scene::Scene::new();
+
+        assert_eq!(
+            RuntimeWorld::clone_from_edit_scene(RuntimeWorldId::new(1), &scene).unwrap_err(),
+            SceneError::MissingRoot
+        );
+    }
+
+    #[test]
+    fn runtime_spawn_creates_runtime_only_child_identity() {
+        let scene = kinetik_scene::Scene::default_scene().unwrap();
+        let mut world =
+            RuntimeWorld::clone_from_edit_scene(RuntimeWorldId::new(1), &scene).unwrap();
+        let parent = RuntimeInstanceId::new(2);
+
+        let spawned = world
+            .spawn_runtime_child(parent, "Part", "RuntimeBlock")
+            .unwrap();
+
+        let spawned_record = world.get(spawned).unwrap();
+        assert_eq!(spawned, RuntimeInstanceId::new(11));
+        assert_eq!(spawned_record.edit_guid, None);
+        assert_eq!(spawned_record.parent, Some(parent));
+        assert_eq!(spawned_record.class_name, "Part");
+        assert_eq!(spawned_record.name, "RuntimeBlock");
+        assert_eq!(
+            world.get(parent).unwrap().children.last().copied(),
+            Some(spawned)
+        );
+    }
+
+    #[test]
+    fn runtime_spawn_rejects_missing_parent_and_invalid_names() {
+        let scene = kinetik_scene::Scene::default_scene().unwrap();
+        let mut world =
+            RuntimeWorld::clone_from_edit_scene(RuntimeWorldId::new(1), &scene).unwrap();
+
+        assert_eq!(
+            world
+                .spawn_runtime_child(RuntimeInstanceId::new(99), "Part", "Block")
+                .unwrap_err(),
+            RuntimeWorldError::MissingParent {
+                parent: RuntimeInstanceId::new(99)
+            }
+        );
+        assert_eq!(
+            world
+                .spawn_runtime_child(RuntimeInstanceId::new(1), "  ", "Block")
+                .unwrap_err(),
+            RuntimeWorldError::EmptyClassName
+        );
+        assert_eq!(
+            world
+                .spawn_runtime_child(RuntimeInstanceId::new(1), "Part", "Bad/Name")
+                .unwrap_err(),
+            RuntimeWorldError::InvalidInstanceName {
+                name: "Bad/Name".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn runtime_despawn_removes_subtree_and_parent_links() {
+        let scene = kinetik_scene::Scene::default_scene().unwrap();
+        let mut world =
+            RuntimeWorld::clone_from_edit_scene(RuntimeWorldId::new(1), &scene).unwrap();
+        let parent = RuntimeInstanceId::new(2);
+        let child = world
+            .spawn_runtime_child(parent, "Node3D", "RuntimeParent")
+            .unwrap();
+        let grandchild = world
+            .spawn_runtime_child(child, "Part", "RuntimeChild")
+            .unwrap();
+
+        let removed = world.despawn_runtime_subtree(child).unwrap();
+
+        assert_eq!(removed, vec![child, grandchild]);
+        assert!(world.get(child).is_none());
+        assert!(world.get(grandchild).is_none());
+        assert!(!world.get(parent).unwrap().children.contains(&child));
+    }
+
+    #[test]
+    fn runtime_despawn_rejects_missing_instance_and_root() {
+        let scene = kinetik_scene::Scene::default_scene().unwrap();
+        let mut world =
+            RuntimeWorld::clone_from_edit_scene(RuntimeWorldId::new(1), &scene).unwrap();
+
+        assert_eq!(
+            world
+                .despawn_runtime_subtree(RuntimeInstanceId::new(99))
+                .unwrap_err(),
+            RuntimeWorldError::InvalidInstance {
+                id: RuntimeInstanceId::new(99)
+            }
+        );
+        assert_eq!(
+            world
+                .despawn_runtime_subtree(world.root_id().unwrap())
+                .unwrap_err(),
+            RuntimeWorldError::CannotDespawnRoot {
+                root: RuntimeInstanceId::new(1)
+            }
+        );
+    }
+
+    #[test]
+    fn runtime_mutations_do_not_mutate_source_edit_scene() {
+        let mut scene = kinetik_scene::Scene::new();
+        let root = scene.add_root(ROOT_CLASS_NAME, "Game").unwrap();
+        let edit_child = scene.add_child(root, "Node3D", "SavedNode").unwrap();
+        let edit_child_guid = scene.get(edit_child).unwrap().guid;
+        let edit_document_before = scene.to_document().unwrap();
+        let mut world =
+            RuntimeWorld::clone_from_edit_scene(RuntimeWorldId::new(1), &scene).unwrap();
+        let runtime_child = world.runtime_id_for_edit_guid(edit_child_guid).unwrap();
+
+        let spawned = world
+            .spawn_runtime_child(runtime_child, "Part", "RuntimeBlock")
+            .unwrap();
+        assert_eq!(world.get(spawned).unwrap().edit_guid, None);
+        assert_eq!(
+            world.despawn_runtime_subtree(runtime_child).unwrap(),
+            vec![runtime_child, spawned]
+        );
+
+        assert_eq!(scene.to_document().unwrap(), edit_document_before);
+        assert!(world.runtime_id_for_edit_guid(edit_child_guid).is_none());
+    }
+}
