@@ -4,12 +4,21 @@ use kinetik_core::{
     BundleId, Diagnostic, DiagnosticCode, InstanceGuid, InstanceId, KinetikError, ResourceId,
     ScriptId, SignalId,
 };
+use kinetik_project::{
+    ProjectDocumentRefs, ProjectIdentity, ProjectModel, ProjectSettingsDocument,
+};
 
 /// Returns the crate name for smoke tests and early integration checks.
 #[must_use]
 pub const fn crate_name() -> &'static str {
     "kinetik-test"
 }
+
+/// Deterministic project name used by project fixtures.
+pub const TEST_PROJECT_NAME: &str = "Test Project";
+
+/// Deterministic engine compatibility string used by project fixtures.
+pub const TEST_ENGINE_COMPATIBILITY: &str = "0.0";
 
 /// Deterministic typed ID factory for tests.
 ///
@@ -156,6 +165,56 @@ pub const fn bundle_id(raw: u64) -> BundleId {
     BundleId::new(raw)
 }
 
+/// Creates deterministic project identity fixture data.
+///
+/// # Panics
+///
+/// Panics only if the built-in fixture constants become invalid.
+#[must_use]
+pub fn project_identity() -> ProjectIdentity {
+    ProjectIdentity::new(TEST_PROJECT_NAME, TEST_ENGINE_COMPATIBILITY)
+        .expect("test project identity should be valid")
+}
+
+/// Creates deterministic project settings fixture data.
+#[must_use]
+pub fn project_settings() -> ProjectSettingsDocument {
+    ProjectSettingsDocument::new(project_identity())
+}
+
+/// Creates deterministic project document reference fixture data.
+#[must_use]
+pub fn project_document_refs() -> ProjectDocumentRefs {
+    ProjectDocumentRefs::default()
+}
+
+/// Creates a deterministic project model fixture without layout diagnostics.
+#[must_use]
+pub fn project_model() -> ProjectModel {
+    ProjectModel::new(project_settings(), project_document_refs())
+}
+
+/// Creates a deterministic project model fixture with valid layout diagnostics.
+#[must_use]
+pub fn project_model_with_valid_layout() -> ProjectModel {
+    ProjectModel::with_layout_validation(
+        project_settings(),
+        project_document_refs(),
+        valid_project_paths(),
+    )
+}
+
+/// Returns canonical project paths that satisfy required source layout validation.
+#[must_use]
+pub fn valid_project_paths() -> Vec<&'static str> {
+    project_model()
+        .layout()
+        .required_source_paths()
+        .into_iter()
+        .map(|path| path.path)
+        .collect()
+}
+
 /// Asserts that a diagnostic has the expected stable code.
 ///
 /// # Panics
@@ -224,6 +283,29 @@ mod tests {
         assert_eq!(signal_id(14).raw(), 14);
         assert_eq!(script_id(15).raw(), 15);
         assert_eq!(bundle_id(16).raw(), 16);
+    }
+
+    #[test]
+    fn project_fixtures_create_deterministic_project_state() {
+        let model = project_model();
+
+        assert_eq!(model.settings().identity().name(), TEST_PROJECT_NAME);
+        assert_eq!(
+            model.settings().identity().engine_compatibility(),
+            TEST_ENGINE_COMPATIBILITY
+        );
+        assert_eq!(model.documents().active_scene(), "scenes/main.ktscene");
+        assert!(model.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn project_layout_fixture_paths_validate_without_diagnostics() {
+        let paths = valid_project_paths();
+        let model = project_model_with_valid_layout();
+
+        assert!(paths.contains(&"Kinetik.toml"));
+        assert!(paths.contains(&"project/assets.ktmanifest"));
+        assert!(model.diagnostics().is_empty());
     }
 
     #[test]
