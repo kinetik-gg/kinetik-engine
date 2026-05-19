@@ -1,6 +1,6 @@
 # Serialization Dependency Proposal: TOML and RON
 
-Status: Proposed, awaiting maintainer approval.
+Status: Approved for scoped installation follow-up.
 
 Related ADRs:
 
@@ -17,7 +17,9 @@ files:
 - `toml` for `Kinetik.toml` and `*.ktmanifest` parsing/writing.
 - `ron` for `.ktscene` and `.ktprefab` parsing/writing.
 
-Do not add these dependencies until this proposal is explicitly approved.
+This proposal is approved. Do not add these dependencies except through a
+focused dependency-installation issue that records exact versions/features and
+runs the required checks.
 
 Current crate metadata was checked with `cargo info` on 2026-05-20:
 
@@ -139,6 +141,9 @@ issue.
 
 ## Approval Outcome
 
-Implementation must wait for maintainer approval. If approved, create a
-separate dependency-installation issue that adds only the approved crates,
-records exact versions/features, and runs the full workspace checks.
+Approved by maintainer direction in issue #48 on 2026-05-20.
+
+Create a separate dependency-installation issue that adds only `serde`, `toml`,
+and `ron`, records exact versions/features, and runs the full workspace checks.
+`toml_edit` remains deferred unless a separate proposal approves
+format-preserving TOML edits.

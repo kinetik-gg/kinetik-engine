@@ -1,6 +1,6 @@
 # Luau Dependency Proposal
 
-Status: Proposed, blocked on maintainer approval and unsafe/FFI review.
+Status: Approved direction, blocked on unsafe/FFI installation review.
 
 Related ADRs and docs:
 
@@ -140,5 +140,8 @@ runtime-agnostic.
 
 ## Approval Outcome
 
-Implementation must wait for maintainer approval, feature selection, and
-unsafe/FFI boundary review.
+Approved by maintainer direction in issue #48 on 2026-05-20.
+
+Create a separate installation issue before adding any crates. That issue must
+select exact `mlua` features, complete the ADR 0017 unsafe/FFI boundary review,
+and keep VM internals behind `kinetik-script-luau`.

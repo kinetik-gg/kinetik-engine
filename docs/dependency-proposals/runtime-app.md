@@ -1,6 +1,6 @@
 # Runtime/App Dependency Survey
 
-Status: Survey complete, no dependency installation proposed.
+Status: Approved survey, no dependency installation approved.
 
 Related ADRs and docs:
 
@@ -123,5 +123,8 @@ explicitly.
 
 ## Approval Outcome
 
-No runtime/app dependency approval is requested. Revisit after M5
-runtime/frame contracts identify a concrete dependency-backed need.
+Approved by maintainer direction in issue #48 on 2026-05-20.
+
+This survey approves the dependency-light runtime/app direction. No runtime/app
+dependency installation is approved yet; revisit after M5 runtime/frame
+contracts identify a concrete dependency-backed need.

@@ -1,6 +1,6 @@
 # Asset Import Dependency Proposal
 
-Status: Proposed, blocked on maintainer approval and MSRV direction.
+Status: Approved direction, blocked on MSRV/version installation decision.
 
 Related ADRs and docs:
 
@@ -132,5 +132,8 @@ format importer modules or crates may be proposed later if importer code grows.
 
 ## Approval Outcome
 
-Implementation must wait for maintainer approval, narrow feature selection, and
-an MSRV/version decision for image decoding.
+Approved by maintainer direction in issue #48 on 2026-05-20.
+
+Create separate installation issues before adding importer crates. Those issues
+must resolve `image` MSRV/version selection, choose narrow format features, and
+keep parser/decoder types behind import/resource boundaries.

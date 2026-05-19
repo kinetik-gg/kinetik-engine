@@ -1,6 +1,6 @@
 # Physics Dependency Proposal: Rapier
 
-Status: Proposed, blocked on maintainer approval and MSRV direction.
+Status: Approved direction, blocked on MSRV/version installation decision.
 
 Related ADRs and docs:
 
@@ -122,4 +122,8 @@ surfaces consume Kinetik physics contracts.
 
 ## Approval Outcome
 
-Implementation must wait for maintainer approval and an MSRV/version decision.
+Approved by maintainer direction in issue #48 on 2026-05-20.
+
+Create a separate installation issue before adding any crates. That issue must
+resolve the Rapier MSRV/version decision, record exact features, and keep
+Rapier, Parry, and Nalgebra types behind the `kinetik-physics` boundary.

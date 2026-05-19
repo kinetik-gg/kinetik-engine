@@ -1,6 +1,6 @@
 # Renderer Dependency Proposal: wgpu Stack
 
-Status: Proposed, blocked on maintainer approval and MSRV direction.
+Status: Approved direction, blocked on MSRV/version installation decision.
 
 Related ADRs and docs:
 
@@ -22,7 +22,8 @@ Two decisions are required before installation:
 2. Whether the first renderer implementation should use the latest `wgpu` stack
    or deliberately pin an older compatible line for the initial primitive slice.
 
-Do not add these dependencies until the decision is explicit.
+The `wgpu` renderer direction is approved. Do not add dependencies until the
+MSRV/version decision is explicit in a focused installation issue.
 
 Current crate metadata was checked with `cargo info` on 2026-05-20:
 
@@ -214,9 +215,9 @@ code and a focused refactor issue justifies the split.
 
 ## Approval Outcome
 
-Implementation must wait for maintainer approval.
+Approved by maintainer direction in issue #48 on 2026-05-20.
 
-If approved, create a separate dependency-installation issue that:
+Create a separate dependency-installation issue that:
 
 - Resolves the Rust 1.80 versus `wgpu` 29 MSRV mismatch.
 - Adds only the approved renderer dependencies.
