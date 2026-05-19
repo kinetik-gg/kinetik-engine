@@ -1,0 +1,34 @@
+[workspace]
+members = [
+    "crates/kinetik-core",
+    "crates/kinetik-app",
+    "crates/kinetik-scene",
+    "crates/kinetik-resource",
+    "crates/kinetik-render",
+    "crates/kinetik-script",
+    "crates/kinetik-script-luau",
+    "crates/kinetik-signal",
+    "crates/kinetik-physics",
+    "crates/kinetik-audio",
+    "crates/kinetik-reflect",
+    "crates/kinetik-editor",
+    "crates/kinetik-ui",
+    "crates/kinetik-terrain",
+    "crates/kinetik-bundle",
+    "crates/kinetik-test",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0 OR MIT"
+repository = "https://example.invalid/kinetik"
+rust-version = "1.80"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"

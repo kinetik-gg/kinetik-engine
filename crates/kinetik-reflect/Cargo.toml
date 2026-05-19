@@ -1,0 +1,14 @@
+[package]
+name = "kinetik-reflect"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Class-level property descriptors and reflection metadata for Kinetik."
+
+[lints]
+workspace = true
+
+[dependencies]
+kinetik-core = { path = "../kinetik-core" }

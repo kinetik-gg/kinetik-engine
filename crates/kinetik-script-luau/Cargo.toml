@@ -1,0 +1,15 @@
+[package]
+name = "kinetik-script-luau"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Luau VM bridge layer for Kinetik."
+
+[lints]
+workspace = true
+
+[dependencies]
+kinetik-core = { path = "../kinetik-core" }
+kinetik-script = { path = "../kinetik-script" }

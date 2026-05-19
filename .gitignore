@@ -1,0 +1,7 @@
+/target/
+.kinetik/cache/
+.kinetik/imported/
+.kinetik/build/
+.DS_Store
+*.swp
+*.tmp

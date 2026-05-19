@@ -1,0 +1,17 @@
+[package]
+name = "kinetik-app"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Runtime app loop and subsystem orchestration for Kinetik."
+
+[lints]
+workspace = true
+
+[dependencies]
+kinetik-core = { path = "../kinetik-core" }
+kinetik-scene = { path = "../kinetik-scene" }
+kinetik-resource = { path = "../kinetik-resource" }
+kinetik-signal = { path = "../kinetik-signal" }

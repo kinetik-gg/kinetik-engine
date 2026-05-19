@@ -1,0 +1,29 @@
+# Text engine files
+*.rs text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.ron text eol=lf
+*.wgsl text eol=lf
+*.luau text eol=lf
+*.kmat text eol=lf
+*.kgraph text eol=lf
+*.ktscene text eol=lf
+*.ktprefab text eol=lf
+*.ktsettings text eol=lf
+*.ktmeta text eol=lf
+
+# Large binary assets; users may enable Git LFS when ready.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.tga binary
+*.exr binary
+*.hdr binary
+*.wav binary
+*.ogg binary
+*.mp3 binary
+*.glb binary
+*.fbx binary
+*.blend binary
+*.mp4 binary
