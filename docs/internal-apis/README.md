@@ -15,6 +15,8 @@ feature work.
 - `command-change-record.md`: validated commands, change records, undo, and
   dirty-state explanation.
 - `runtime-frame.md`: runtime world identity and frame scheduling.
+- `signal-bus.md`: deterministic signal descriptors, connections, event queues,
+  and frame flush integration.
 - `resource-database.md`: resource database over manifests and import cache
   contracts.
 - `mcp-command-surface.md`: editor-owned MCP command surface shape.
