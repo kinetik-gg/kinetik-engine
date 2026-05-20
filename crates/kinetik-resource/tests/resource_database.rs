@@ -284,6 +284,48 @@ fn resource_database_reports_raw_asset_reference_field_errors() {
 }
 
 #[test]
+fn resource_database_accepts_material_references_with_material_paths() {
+    let manifest = AssetManifest::from_entries(vec![manifest_entry(
+        7,
+        "res://assets/materials/stone.knmat",
+    )])
+    .unwrap();
+    let database = ResourceDatabase::from_manifest(manifest);
+    let reference = AssetReference::new(
+        AssetGuid::new(7),
+        AssetPath::new("res://assets/materials/stone.knmat").unwrap(),
+    );
+
+    assert!(database
+        .material_reference_diagnostics(&reference)
+        .is_empty());
+    assert!(database
+        .raw_material_reference_diagnostics(7, "res://assets/materials/stone.knmat")
+        .is_empty());
+}
+
+#[test]
+fn resource_database_reports_material_references_with_non_material_paths() {
+    let manifest =
+        AssetManifest::from_entries(vec![manifest_entry(7, "res://assets/textures/stone.png")])
+            .unwrap();
+    let database = ResourceDatabase::from_manifest(manifest);
+    let reference = AssetReference::new(
+        AssetGuid::new(7),
+        AssetPath::new("res://assets/textures/stone.png").unwrap(),
+    );
+
+    let diagnostics = database.material_reference_diagnostics(&reference);
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, ResourceError::INVALID_ASSET_KIND_CODE);
+    assert_eq!(
+        diagnostics[0].location.asset_path.as_deref(),
+        Some("res://assets/textures/stone.png")
+    );
+}
+
+#[test]
 fn resource_database_accepts_valid_scene_asset_references() {
     let manifest = AssetManifest::from_entries(vec![
         manifest_entry(1, "res://assets/materials/base.knmat"),
