@@ -311,6 +311,7 @@ impl ApplicationHandler for WinitEditorShell {
                     }
                 };
                 self.state.mark_running();
+                window.request_redraw();
                 self.window = Some(window);
                 self.surface = Some(surface);
             }
@@ -335,13 +336,12 @@ impl ApplicationHandler for WinitEditorShell {
                     event_loop.exit();
                 }
             }
+            WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+                if let Some(window) = self.window.as_ref() {
+                    window.request_redraw();
+                }
+            }
             _ => {}
-        }
-    }
-
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        if let Some(window) = self.window.as_ref() {
-            window.request_redraw();
         }
     }
 }
