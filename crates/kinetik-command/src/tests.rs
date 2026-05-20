@@ -152,6 +152,146 @@ fn command_result_success_preserves_change_record_order() {
 }
 
 #[test]
+fn undo_redo_record_stores_group_summary_mode_and_changes() {
+    let change =
+        CommandChangeRecord::new("RenameInstance", CommandTargetMode::Edit, "A renamed").unwrap();
+    let record = UndoRedoRecord::new(
+        UndoGroupId::new(9),
+        CommandTargetMode::Edit,
+        "Rename A",
+        [change.clone()],
+    )
+    .unwrap();
+
+    assert_eq!(record.group_id(), UndoGroupId::new(9));
+    assert_eq!(record.target_mode(), CommandTargetMode::Edit);
+    assert_eq!(record.summary(), "Rename A");
+    assert_eq!(record.changes(), &[change]);
+}
+
+#[test]
+fn undo_redo_record_rejects_empty_summary() {
+    assert_eq!(
+        UndoRedoRecord::new(
+            UndoGroupId::new(1),
+            CommandTargetMode::Edit,
+            " ",
+            Vec::<CommandChangeRecord>::new(),
+        )
+        .unwrap_err(),
+        CommandError::EmptyDirtySummary
+    );
+}
+
+#[test]
+fn command_history_commits_successful_changes_and_assigns_group() {
+    let change =
+        CommandChangeRecord::new("RenameInstance", CommandTargetMode::Edit, "A renamed").unwrap();
+    let result =
+        CommandResult::succeeded_with_changes("RenameInstance", CommandTargetMode::Edit, [change])
+            .unwrap();
+    let mut history = CommandHistory::new();
+
+    let record = history.commit_result("Rename A", &result).unwrap().unwrap();
+
+    assert_eq!(record.group_id(), UndoGroupId::new(1));
+    assert_eq!(record.summary(), "Rename A");
+    assert_eq!(record.changes()[0].undo_group(), Some(UndoGroupId::new(1)));
+    assert_eq!(history.undo_stack(), &[record]);
+    assert!(history.redo_stack().is_empty());
+}
+
+#[test]
+fn command_history_ignores_failed_or_no_change_results() {
+    let failed = CommandResult::rejected(
+        "SetProperty",
+        Some(CommandTargetMode::Edit),
+        &CommandError::AmbiguousTargetMode {
+            command_kind: "SetProperty".to_owned(),
+        },
+    )
+    .unwrap();
+    let no_change = CommandResult::succeeded("SelectInstance", CommandTargetMode::Edit).unwrap();
+    let mut history = CommandHistory::new();
+
+    assert_eq!(history.commit_result("Failed", &failed).unwrap(), None);
+    assert_eq!(
+        history.commit_result("No change", &no_change).unwrap(),
+        None
+    );
+    assert!(history.is_empty());
+}
+
+#[test]
+fn command_history_moves_records_between_undo_and_redo_in_stack_order() {
+    let first = CommandResult::succeeded_with_changes(
+        "RenameInstance",
+        CommandTargetMode::Edit,
+        [
+            CommandChangeRecord::new("RenameInstance", CommandTargetMode::Edit, "A renamed")
+                .unwrap(),
+        ],
+    )
+    .unwrap();
+    let second = CommandResult::succeeded_with_changes(
+        "RenameInstance",
+        CommandTargetMode::Edit,
+        [
+            CommandChangeRecord::new("RenameInstance", CommandTargetMode::Edit, "B renamed")
+                .unwrap(),
+        ],
+    )
+    .unwrap();
+    let mut history = CommandHistory::new();
+    let first_record = history.commit_result("Rename A", &first).unwrap().unwrap();
+    let second_record = history.commit_result("Rename B", &second).unwrap().unwrap();
+
+    assert_eq!(history.pop_undo(), Some(second_record.clone()));
+    assert_eq!(history.pop_undo(), Some(first_record.clone()));
+    assert_eq!(history.pop_undo(), None);
+    assert_eq!(
+        history.redo_stack(),
+        &[second_record.clone(), first_record.clone()]
+    );
+    assert_eq!(history.pop_redo(), Some(first_record));
+    assert_eq!(history.pop_redo(), Some(second_record));
+    assert_eq!(history.pop_redo(), None);
+}
+
+#[test]
+fn command_history_clears_redo_after_new_commit() {
+    let first = CommandResult::succeeded_with_changes(
+        "RenameInstance",
+        CommandTargetMode::Edit,
+        [
+            CommandChangeRecord::new("RenameInstance", CommandTargetMode::Edit, "A renamed")
+                .unwrap(),
+        ],
+    )
+    .unwrap();
+    let second = CommandResult::succeeded_with_changes(
+        "RenameInstance",
+        CommandTargetMode::Edit,
+        [
+            CommandChangeRecord::new("RenameInstance", CommandTargetMode::Edit, "B renamed")
+                .unwrap(),
+        ],
+    )
+    .unwrap();
+    let mut history = CommandHistory::new();
+
+    history.commit_result("Rename A", &first).unwrap().unwrap();
+    assert!(history.pop_undo().is_some());
+    assert_eq!(history.redo_stack().len(), 1);
+
+    history.commit_result("Rename B", &second).unwrap().unwrap();
+
+    assert!(history.redo_stack().is_empty());
+    assert_eq!(history.undo_stack().len(), 1);
+    assert_eq!(history.undo_stack()[0].group_id(), UndoGroupId::new(2));
+}
+
+#[test]
 fn command_result_failure_preserves_diagnostic_order() {
     let first = CommandError::AmbiguousTargetMode {
         command_kind: "SetProperty".to_owned(),
