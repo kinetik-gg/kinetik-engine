@@ -22,15 +22,15 @@ Use TOML for project configuration and project manifests:
 
 ```text
 Kinetik.toml
-project/assets.ktmanifest
-project/instances.ktmanifest
+project/assets.knmanifest
+project/instances.knmanifest
 ```
 
 Use RON for scene and prefab instance trees:
 
 ```text
-scenes/main.ktscene
-prefabs/enemy.ktprefab
+scenes/main.knscene
+prefabs/enemy.knprefab
 ```
 
 Kinetik will not invent a custom scene syntax for the initial implementation.

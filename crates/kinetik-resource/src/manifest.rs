@@ -250,7 +250,7 @@ impl AssetManifest {
     }
 }
 
-/// Dependency-free `project/assets.ktmanifest` document contract.
+/// Dependency-free `project/assets.knmanifest` document contract.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AssetManifestDocument {
     /// Manifest entries. Conversion to [`AssetManifest`] validates and sorts them.

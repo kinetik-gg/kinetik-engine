@@ -97,7 +97,7 @@ Key outputs:
 
 - Project layout model.
 - `Kinetik.toml` contract.
-- `assets.ktmanifest` in-memory model.
+- `assets.knmanifest` in-memory model.
 - Asset identity and `res://` references.
 - TOML/RON dependency proposal.
 - Deterministic scene and manifest serialization.
@@ -702,7 +702,7 @@ Deferred feature areas:
   workflows.
 - Prefabs and packages: clone-ready templates, override records, package
   dependencies, and broken-override diagnostics.
-- Build/export/bundles: `.ktbundle` build/load/verify, platform export,
+- Build/export/bundles: `.knbundle` build/load/verify, platform export,
   signing/hash verification, and runtime content mounting.
 - Terrain and world environment: terrain chunks, brushes, sky/atmosphere,
   time-of-day, weather direction, and large-world constraints.

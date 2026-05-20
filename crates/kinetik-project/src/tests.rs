@@ -37,9 +37,9 @@ fn project_errors_convert_to_build_diagnostics() {
 fn default_document_refs_follow_canonical_project_layout() {
     let refs = ProjectDocumentRefs::from_default_layout();
 
-    assert_eq!(refs.active_scene(), "scenes/main.ktscene");
-    assert_eq!(refs.assets_manifest(), "project/assets.ktmanifest");
-    assert_eq!(refs.instances_manifest(), "project/instances.ktmanifest");
+    assert_eq!(refs.active_scene(), "scenes/main.knscene");
+    assert_eq!(refs.assets_manifest(), "project/assets.knmanifest");
+    assert_eq!(refs.instances_manifest(), "project/instances.knmanifest");
 }
 
 #[test]
@@ -47,8 +47,8 @@ fn document_refs_reject_empty_paths() {
     assert_eq!(
         ProjectDocumentRefs::new(
             "",
-            "project/assets.ktmanifest",
-            "project/instances.ktmanifest"
+            "project/assets.knmanifest",
+            "project/instances.knmanifest"
         )
         .unwrap_err(),
         ProjectError::EmptyDocumentPath {
@@ -187,7 +187,7 @@ fn project_model_stores_identity_and_document_refs_without_editor_state() {
     let model = ProjectModel::new(settings(), ProjectDocumentRefs::default());
 
     assert_eq!(model.settings().identity().name(), "Example");
-    assert_eq!(model.documents().active_scene(), "scenes/main.ktscene");
+    assert_eq!(model.documents().active_scene(), "scenes/main.knscene");
     assert!(model.diagnostics().is_empty());
 }
 
@@ -226,13 +226,13 @@ fn project_model_clears_stale_layout_diagnostics_after_valid_layout() {
     model.validate_layout([
         "Kinetik.toml",
         "scenes",
-        "scenes/main.ktscene",
+        "scenes/main.knscene",
         "prefabs",
         "scripts",
         "assets",
         "project",
-        "project/assets.ktmanifest",
-        "project/instances.ktmanifest",
+        "project/assets.knmanifest",
+        "project/instances.knmanifest",
     ]);
 
     assert_eq!(

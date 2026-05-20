@@ -80,7 +80,7 @@ The editor should be able to explain why something is dirty:
 ```text
 Scene dirty: /Game/Lighting/DirectionalLight.Intensity changed.
 Asset manifest dirty: res://assets/models/tree.glb import scale changed.
-Prefab dirty: Enemy.ktprefab has unapplied Transform.Position override.
+Prefab dirty: Enemy.knprefab has unapplied Transform.Position override.
 ```
 
 ## Semantic Diff and Merge

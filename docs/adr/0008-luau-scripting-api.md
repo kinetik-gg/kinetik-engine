@@ -69,7 +69,7 @@ connection:Disconnect()
 Initial asset and HTTP shape:
 
 ```lua
-local prefab = assets:Load("res://prefabs/enemy.ktprefab")
+local prefab = assets:Load("res://prefabs/enemy.knprefab")
 local response = http:GetAsync("https://api.example.com/items")
 ```
 

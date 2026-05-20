@@ -6,7 +6,7 @@ use kinetik_reflect::PropertyValue;
 use crate::scene::{default_properties_for_class, property_value_error, validate_instance_name};
 use crate::{InstanceClassRegistry, InstanceRecord, Scene, SceneError, SceneResult};
 
-/// Dependency-free `.ktscene` document contract.
+/// Dependency-free `.knscene` document contract.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SceneDocument {
     /// Root serialized instance tree.

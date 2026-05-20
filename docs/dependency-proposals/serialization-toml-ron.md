@@ -14,8 +14,8 @@ Approve a focused serialization dependency set for deterministic source project
 files:
 
 - `serde` with `derive` for internal contract structs.
-- `toml` for `Kinetik.toml` and `*.ktmanifest` parsing/writing.
-- `ron` for `.ktscene` and `.ktprefab` parsing/writing.
+- `toml` for `Kinetik.toml` and `*.knmanifest` parsing/writing.
+- `ron` for `.knscene` and `.knprefab` parsing/writing.
 
 This proposal is approved. Do not add these dependencies except through a
 focused dependency-installation issue that records exact versions/features and
@@ -43,8 +43,8 @@ proposal for `toml_edit`.
 
 Dependency types must not leak into public engine APIs.
 
-- `kinetik-resource` owns TOML loading/writing for `project/assets.ktmanifest`.
-- `kinetik-scene` owns RON loading/writing for `.ktscene` and `.ktprefab`
+- `kinetik-resource` owns TOML loading/writing for `project/assets.knmanifest`.
+- `kinetik-scene` owns RON loading/writing for `.knscene` and `.knprefab`
   contract types.
 - The eventual `Kinetik.toml` project settings owner must keep TOML parsing
   behind a project-settings boundary. If no crate owns that boundary cleanly

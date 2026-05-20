@@ -160,7 +160,7 @@ fn manifest_orders_entries_deterministically_by_path() {
     let manifest = AssetManifest::from_entries(vec![
         manifest_entry(2, "res://assets/models/tree.glb", "gltf").unwrap(),
         manifest_entry(1, "res://assets/audio/theme.ogg", "audio").unwrap(),
-        manifest_entry(3, "res://assets/materials/bark.ktmat", "material").unwrap(),
+        manifest_entry(3, "res://assets/materials/bark.knmat", "material").unwrap(),
     ])
     .unwrap();
 
@@ -173,7 +173,7 @@ fn manifest_orders_entries_deterministically_by_path() {
         ordered_paths,
         vec![
             "res://assets/audio/theme.ogg",
-            "res://assets/materials/bark.ktmat",
+            "res://assets/materials/bark.knmat",
             "res://assets/models/tree.glb"
         ]
     );
@@ -412,13 +412,13 @@ fn project_layout_lists_default_scaffold_paths_in_order() {
         vec![
             "Kinetik.toml",
             "scenes",
-            "scenes/main.ktscene",
+            "scenes/main.knscene",
             "prefabs",
             "scripts",
             "assets",
             "project",
-            "project/assets.ktmanifest",
-            "project/instances.ktmanifest",
+            "project/assets.knmanifest",
+            "project/instances.knmanifest",
             ".kinetik",
             ".kinetik/cache",
             ".kinetik/import",
@@ -427,7 +427,7 @@ fn project_layout_lists_default_scaffold_paths_in_order() {
     );
     assert_eq!(
         layout.path(ProjectPathKind::AssetsManifest),
-        Some("project/assets.ktmanifest")
+        Some("project/assets.knmanifest")
     );
 }
 
@@ -445,13 +445,13 @@ fn project_layout_separates_required_source_from_generated_paths() {
         vec![
             "Kinetik.toml",
             "scenes",
-            "scenes/main.ktscene",
+            "scenes/main.knscene",
             "prefabs",
             "scripts",
             "assets",
             "project",
-            "project/assets.ktmanifest",
-            "project/instances.ktmanifest"
+            "project/assets.knmanifest",
+            "project/instances.knmanifest"
         ]
     );
     assert!(
@@ -471,13 +471,13 @@ fn project_layout_validates_required_paths_without_requiring_generated_output() 
     let present_paths = [
         "Kinetik.toml",
         "scenes/",
-        "scenes/main.ktscene",
+        "scenes/main.knscene",
         "prefabs",
         "scripts",
         "assets",
         "project",
-        "project/assets.ktmanifest",
-        "project/instances.ktmanifest",
+        "project/assets.knmanifest",
+        "project/instances.knmanifest",
     ];
 
     layout.validate_required_paths(present_paths).unwrap();
@@ -495,12 +495,12 @@ fn project_layout_reports_missing_paths_in_deterministic_order() {
         ResourceError::MissingProjectPaths {
             paths: vec![
                 "scenes".to_owned(),
-                "scenes/main.ktscene".to_owned(),
+                "scenes/main.knscene".to_owned(),
                 "prefabs".to_owned(),
                 "scripts".to_owned(),
                 "project".to_owned(),
-                "project/assets.ktmanifest".to_owned(),
-                "project/instances.ktmanifest".to_owned()
+                "project/assets.knmanifest".to_owned(),
+                "project/instances.knmanifest".to_owned()
             ]
         }
     );

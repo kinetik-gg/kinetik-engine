@@ -15,9 +15,9 @@ Default project workspace:
 MyGame/
   Kinetik.toml
   scenes/
-    main.ktscene
+    main.knscene
   prefabs/
-    enemy.ktprefab
+    enemy.knprefab
   scripts/
     player.luau
   assets/
@@ -26,8 +26,8 @@ MyGame/
     textures/
       grass.png
   project/
-    assets.ktmanifest
-    instances.ktmanifest
+    assets.knmanifest
+    instances.knmanifest
   .kinetik/
     cache/
     import/
