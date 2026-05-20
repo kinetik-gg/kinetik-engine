@@ -1,6 +1,7 @@
 //! editor scaffold for Kinetik.
 
 mod mcp;
+mod session;
 mod shell;
 
 pub use mcp::{
@@ -9,6 +10,10 @@ pub use mcp::{
     McpMutatingCommand, McpMutationResponse, McpMutationSession, McpReadOnlyCommand,
     McpSceneMutationRequest, McpUndoRedoResponse, ProjectStatusResponse,
     ResourceManifestEntrySummary, ResourceManifestResponse, SceneInstanceSummary,
+};
+pub use session::{
+    DiagnosticPanelItem, DiagnosticsPanelState, EditorDocumentSelection, EditorFocus,
+    EditorModeState, EditorSelection, EditorSession, EditorSessionProject,
 };
 pub use shell::{
     default_editor_shell_layout, run_editor_shell, EditorPanel, EditorShellError,
