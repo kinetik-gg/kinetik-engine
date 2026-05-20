@@ -6,7 +6,10 @@ use kinetik_project::{
     ProjectDocumentRefs, ProjectIdentity, ProjectModel, ProjectSettingsDocument,
 };
 use kinetik_reflect::{EditorEditability, PropertyType, PropertyValue};
-use kinetik_scene::Scene;
+use kinetik_resource::{AssetGuid, AssetManifest, AssetManifestEntry};
+use kinetik_scene::{InstanceClassRegistry, Scene};
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::*;
 use crate::{EditorPanel, InspectorCommandError};
@@ -25,6 +28,16 @@ fn open_demo_session() -> EditorSession {
         Scene::default_scene().expect("valid default scene"),
     );
     session
+}
+
+fn temp_project_root(test_name: &str) -> PathBuf {
+    let mut path = std::env::temp_dir();
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time")
+        .as_nanos();
+    path.push(format!("kinetik-{test_name}-{unique}"));
+    path
 }
 
 #[test]
@@ -111,6 +124,106 @@ fn dirty_state_is_derived_from_command_history() {
         dirty.changes()[0].change_summary(),
         "created /Game/Workspace/Block"
     );
+}
+
+#[test]
+fn save_project_writes_golden_files_and_clears_dirty_state() {
+    let mut session = open_demo_session();
+    let workspace = session
+        .active_scene()
+        .unwrap()
+        .get_by_path("/Game/Workspace")
+        .unwrap()
+        .id;
+    session
+        .explorer_create_child(workspace, "Part", "Block")
+        .expect("create block");
+    let manifest = AssetManifest::from_entries(vec![AssetManifestEntry::from_parts(
+        AssetGuid::new(1),
+        "res://assets/models/block.glb",
+        "gltf",
+        "1.0.0",
+        "hash-block",
+    )
+    .unwrap()])
+    .unwrap();
+    let project = session.project().unwrap().clone();
+    let scene = session.active_scene().unwrap().clone();
+    session.open_project_with_assets(project, scene, manifest);
+    session
+        .explorer_create_child(workspace, "Part", "SecondBlock")
+        .expect("make session dirty");
+
+    let root = temp_project_root("save-golden");
+    session.save_project_to(&root).expect("save project");
+
+    assert!(session.dirty_state().is_clean());
+    assert_eq!(
+        std::fs::read_to_string(root.join("Kinetik.toml")).unwrap(),
+        include_str!("../../fixtures/save_reload/Kinetik.toml")
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("project/assets.knmanifest")).unwrap(),
+        include_str!("../../fixtures/save_reload/assets.knmanifest")
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("scenes/main.knscene")).unwrap(),
+        include_str!("../../fixtures/save_reload/main.knscene")
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn reload_project_reconstructs_saved_scene_and_manifest() {
+    let mut session = open_demo_session();
+    let workspace = session
+        .active_scene()
+        .unwrap()
+        .get_by_path("/Game/Workspace")
+        .unwrap()
+        .id;
+    session
+        .explorer_create_child(workspace, "Part", "Block")
+        .expect("create block");
+    let manifest = AssetManifest::from_entries(vec![AssetManifestEntry::from_parts(
+        AssetGuid::new(1),
+        "res://assets/models/block.glb",
+        "gltf",
+        "1.0.0",
+        "hash-block",
+    )
+    .unwrap()])
+    .unwrap();
+    let project = session.project().unwrap().clone();
+    let scene = session.active_scene().unwrap().clone();
+    session.open_project_with_assets(project, scene, manifest.clone());
+
+    let root = temp_project_root("reload-smoke");
+    session.save_project_to(&root).expect("save project");
+
+    let mut reloaded = EditorSession::new();
+    reloaded
+        .reload_project_from(
+            &root,
+            InstanceClassRegistry::with_default_scene_classes().unwrap(),
+        )
+        .expect("reload project");
+
+    assert_eq!(
+        reloaded.project().unwrap().settings(),
+        session.project().unwrap().settings()
+    );
+    assert_eq!(
+        reloaded.active_scene().unwrap().to_document().unwrap(),
+        session.active_scene().unwrap().to_document().unwrap()
+    );
+    assert_eq!(reloaded.asset_manifest(), &manifest);
+    assert!(reloaded.dirty_state().is_clean());
+    assert!(matches!(
+        reloaded.selection().document(),
+        EditorDocumentSelection::None
+    ));
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

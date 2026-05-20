@@ -1,0 +1,6 @@
+[[entries]]
+guid = 1
+path = "res://assets/models/block.glb"
+importer_id = "gltf"
+importer_version = "1.0.0"
+settings_hash = "hash-block"

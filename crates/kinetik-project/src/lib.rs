@@ -10,6 +10,7 @@ use kinetik_core::{
     DiagnosticSource, InstanceGuid,
 };
 use kinetik_resource::{ProjectLayout, ProjectPathKind, ResourceError};
+use serde::{Deserialize, Serialize};
 
 /// Result type for project model operations.
 pub type ProjectResult<T> = Result<T, ProjectError>;
@@ -26,6 +27,11 @@ pub enum ProjectError {
         /// Logical document path field.
         field: &'static str,
     },
+    /// Project settings document could not be parsed or written.
+    Serialization {
+        /// Human-readable serialization failure.
+        reason: String,
+    },
 }
 
 impl ProjectError {
@@ -41,6 +47,9 @@ impl ProjectError {
     pub const EMPTY_DOCUMENT_PATH_CODE: DiagnosticCode =
         DiagnosticCode::new("KT_PROJECT_EMPTY_DOCUMENT_PATH");
 
+    /// Stable diagnostic code for project settings serialization failures.
+    pub const SERIALIZATION_CODE: DiagnosticCode = DiagnosticCode::new("KT_PROJECT_SERIALIZATION");
+
     /// Diagnostic source for project-owned validation.
     pub const PROJECT_SOURCE: DiagnosticSource = DiagnosticSource::new("Project");
 
@@ -51,6 +60,7 @@ impl ProjectError {
             Self::EmptyProjectName => Self::EMPTY_PROJECT_NAME_CODE,
             Self::EmptyEngineCompatibility => Self::EMPTY_ENGINE_COMPATIBILITY_CODE,
             Self::EmptyDocumentPath { .. } => Self::EMPTY_DOCUMENT_PATH_CODE,
+            Self::Serialization { .. } => Self::SERIALIZATION_CODE,
         }
     }
 
@@ -77,6 +87,7 @@ impl fmt::Display for ProjectError {
             Self::EmptyDocumentPath { field } => {
                 write!(f, "project document path must not be empty: {field}")
             }
+            Self::Serialization { reason } => write!(f, "project serialization failed: {reason}"),
         }
     }
 }
@@ -139,6 +150,61 @@ impl ProjectSettingsDocument {
     #[must_use]
     pub const fn identity(&self) -> &ProjectIdentity {
         &self.identity
+    }
+
+    /// Serializes this settings document to deterministic `Kinetik.toml` text.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProjectError::Serialization`] if the TOML writer fails.
+    pub fn to_toml_string(&self) -> ProjectResult<String> {
+        let contract = ProjectSettingsToml::from_settings(self);
+        toml::to_string_pretty(&contract).map_err(serialization_error)
+    }
+
+    /// Parses a validated settings document from `Kinetik.toml` text.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProjectError`] when TOML parsing fails or required fields are
+    /// invalid.
+    pub fn from_toml_str(source: &str) -> ProjectResult<Self> {
+        let contract =
+            toml::from_str::<ProjectSettingsToml>(source).map_err(serialization_error)?;
+        Self::try_from(contract)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct ProjectSettingsToml {
+    project: ProjectIdentityToml,
+}
+
+impl ProjectSettingsToml {
+    fn from_settings(settings: &ProjectSettingsDocument) -> Self {
+        Self {
+            project: ProjectIdentityToml {
+                name: settings.identity().name().to_owned(),
+                engine_compatibility: settings.identity().engine_compatibility().to_owned(),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct ProjectIdentityToml {
+    name: String,
+    engine_compatibility: String,
+}
+
+impl TryFrom<ProjectSettingsToml> for ProjectSettingsDocument {
+    type Error = ProjectError;
+
+    fn try_from(value: ProjectSettingsToml) -> Result<Self, Self::Error> {
+        Ok(Self::new(ProjectIdentity::new(
+            value.project.name,
+            value.project.engine_compatibility,
+        )?))
     }
 }
 
@@ -461,6 +527,12 @@ impl ProjectModel {
 
 fn resource_error_to_diagnostic(error: &ResourceError) -> Diagnostic {
     error.to_diagnostic()
+}
+
+fn serialization_error(error: impl fmt::Display) -> ProjectError {
+    ProjectError::Serialization {
+        reason: error.to_string(),
+    }
 }
 
 fn validate_required_text(field: &'static str, value: String) -> ProjectResult<String> {

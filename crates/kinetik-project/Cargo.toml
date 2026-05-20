@@ -13,3 +13,5 @@ workspace = true
 [dependencies]
 kinetik-core = { path = "../kinetik-core" }
 kinetik-resource = { path = "../kinetik-resource" }
+serde = { version = "1.0.228", features = ["derive"] }
+toml = "1.1.2"

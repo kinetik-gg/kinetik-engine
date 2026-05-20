@@ -3,6 +3,7 @@
 mod explorer;
 mod inspector;
 mod mcp;
+mod persistence;
 mod session;
 mod shell;
 
@@ -15,6 +16,7 @@ pub use mcp::{
     McpSceneMutationRequest, McpUndoRedoResponse, ProjectStatusResponse,
     ResourceManifestEntrySummary, ResourceManifestResponse, SceneInstanceSummary,
 };
+pub use persistence::EditorPersistenceError;
 pub use session::{
     DiagnosticPanelItem, DiagnosticsPanelState, EditorDocumentSelection, EditorFocus,
     EditorModeState, EditorSelection, EditorSession, EditorSessionProject, ExplorerCommandError,

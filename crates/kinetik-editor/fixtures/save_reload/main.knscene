@@ -1,0 +1,146 @@
+(
+    root: (
+        guid: 1,
+        class_name: "Game",
+        name: "Game",
+        properties: {
+            "Name": String("Game"),
+        },
+        children: [
+            (
+                guid: 2,
+                class_name: "Workspace",
+                name: "Workspace",
+                properties: {
+                    "Name": String("Workspace"),
+                },
+                children: [
+                    (
+                        guid: 11,
+                        class_name: "Part",
+                        name: "Block",
+                        properties: {
+                            "Name": String("Block"),
+                            "Transform.Position": Vec3((
+                                x: 0.0,
+                                y: 0.0,
+                                z: 0.0,
+                            )),
+                            "Transform.Rotation": Quat((
+                                x: 0.0,
+                                y: 0.0,
+                                z: 0.0,
+                                w: 1.0,
+                            )),
+                            "Transform.Scale": Vec3((
+                                x: 1.0,
+                                y: 1.0,
+                                z: 1.0,
+                            )),
+                            "Visible": Bool(true),
+                        },
+                        children: [],
+                    ),
+                    (
+                        guid: 12,
+                        class_name: "Part",
+                        name: "SecondBlock",
+                        properties: {
+                            "Name": String("SecondBlock"),
+                            "Transform.Position": Vec3((
+                                x: 0.0,
+                                y: 0.0,
+                                z: 0.0,
+                            )),
+                            "Transform.Rotation": Quat((
+                                x: 0.0,
+                                y: 0.0,
+                                z: 0.0,
+                                w: 1.0,
+                            )),
+                            "Transform.Scale": Vec3((
+                                x: 1.0,
+                                y: 1.0,
+                                z: 1.0,
+                            )),
+                            "Visible": Bool(true),
+                        },
+                        children: [],
+                    ),
+                ],
+            ),
+            (
+                guid: 3,
+                class_name: "Prefabs",
+                name: "Prefabs",
+                properties: {
+                    "Name": String("Prefabs"),
+                },
+                children: [],
+            ),
+            (
+                guid: 4,
+                class_name: "Scripts",
+                name: "Scripts",
+                properties: {
+                    "Name": String("Scripts"),
+                },
+                children: [],
+            ),
+            (
+                guid: 5,
+                class_name: "UI",
+                name: "UI",
+                properties: {
+                    "Name": String("UI"),
+                },
+                children: [],
+            ),
+            (
+                guid: 6,
+                class_name: "Lighting",
+                name: "Lighting",
+                properties: {
+                    "Name": String("Lighting"),
+                },
+                children: [],
+            ),
+            (
+                guid: 7,
+                class_name: "Audio",
+                name: "Audio",
+                properties: {
+                    "Name": String("Audio"),
+                },
+                children: [],
+            ),
+            (
+                guid: 8,
+                class_name: "Physics",
+                name: "Physics",
+                properties: {
+                    "Name": String("Physics"),
+                },
+                children: [],
+            ),
+            (
+                guid: 9,
+                class_name: "Assets",
+                name: "Assets",
+                properties: {
+                    "Name": String("Assets"),
+                },
+                children: [],
+            ),
+            (
+                guid: 10,
+                class_name: "Packages",
+                name: "Packages",
+                properties: {
+                    "Name": String("Packages"),
+                },
+                children: [],
+            ),
+        ],
+    ),
+)

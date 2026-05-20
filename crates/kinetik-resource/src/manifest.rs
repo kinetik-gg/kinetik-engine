@@ -1,6 +1,8 @@
 use core::fmt;
 use std::collections::BTreeSet;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{AssetGuid, AssetPath, AssetReference, ResourceError, ResourceResult};
 
 /// Asset import settings hash placeholder used by the in-memory manifest model.
@@ -210,6 +212,16 @@ impl AssetManifest {
         }
     }
 
+    /// Serializes this manifest to deterministic TOML text.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResourceError::Serialization`] if TOML writing fails.
+    pub fn to_toml_string(&self) -> ResourceResult<String> {
+        let contract = AssetManifestToml::from_document(&self.to_document());
+        toml::to_string_pretty(&contract).map_err(serialization_error)
+    }
+
     /// Creates a validated in-memory manifest from a document contract.
     ///
     /// # Errors
@@ -223,6 +235,17 @@ impl AssetManifest {
             .map(AssetManifestEntry::from_document)
             .collect::<ResourceResult<Vec<_>>>()?;
         Self::from_entries(entries)
+    }
+
+    /// Parses a validated asset manifest from TOML text.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResourceError`] when TOML parsing fails or the document is
+    /// invalid.
+    pub fn from_toml_str(source: &str) -> ResourceResult<Self> {
+        let contract = toml::from_str::<AssetManifestToml>(source).map_err(serialization_error)?;
+        Self::from_document(contract.into_document())
     }
 
     fn validate_unique_entries(&self) -> ResourceResult<()> {
@@ -247,6 +270,64 @@ impl AssetManifest {
                 .cmp(right.path())
                 .then_with(|| left.guid().cmp(&right.guid()))
         });
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct AssetManifestToml {
+    entries: Vec<AssetManifestEntryToml>,
+}
+
+impl AssetManifestToml {
+    fn from_document(document: &AssetManifestDocument) -> Self {
+        Self {
+            entries: document
+                .entries
+                .iter()
+                .map(AssetManifestEntryToml::from_document)
+                .collect(),
+        }
+    }
+
+    fn into_document(self) -> AssetManifestDocument {
+        AssetManifestDocument {
+            entries: self
+                .entries
+                .into_iter()
+                .map(AssetManifestEntryToml::into_document)
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct AssetManifestEntryToml {
+    guid: u64,
+    path: String,
+    importer_id: String,
+    importer_version: String,
+    settings_hash: String,
+}
+
+impl AssetManifestEntryToml {
+    fn from_document(document: &AssetManifestEntryDocument) -> Self {
+        Self {
+            guid: document.guid,
+            path: document.path.clone(),
+            importer_id: document.importer_id.clone(),
+            importer_version: document.importer_version.clone(),
+            settings_hash: document.settings_hash.clone(),
+        }
+    }
+
+    fn into_document(self) -> AssetManifestEntryDocument {
+        AssetManifestEntryDocument {
+            guid: self.guid,
+            path: self.path,
+            importer_id: self.importer_id,
+            importer_version: self.importer_version,
+            settings_hash: self.settings_hash,
+        }
     }
 }
 
@@ -329,4 +410,10 @@ fn validate_importer_field(field: &'static str, value: &str) -> ResourceResult<(
         });
     }
     Ok(())
+}
+
+fn serialization_error(error: impl fmt::Display) -> ResourceError {
+    ResourceError::Serialization {
+        reason: error.to_string(),
+    }
 }
