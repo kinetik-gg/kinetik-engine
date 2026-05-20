@@ -1,6 +1,6 @@
 use kinetik_core::InstanceId;
 use kinetik_reflect::PropertyValue;
-use kinetik_scene::{Scene, SceneMutationQueue};
+use kinetik_scene::{Scene, SceneMutationQueue, SceneMutationResult};
 
 use crate::{
     ChangeTarget, CommandChangeRecord, CommandError, CommandModelResult, CommandResult,
@@ -9,6 +9,18 @@ use crate::{
 
 /// Stable command kind for edit-mode scene instance rename.
 pub const RENAME_INSTANCE_COMMAND: &str = "RenameInstance";
+
+/// Stable command kind for edit-mode scene child creation.
+pub const CREATE_INSTANCE_COMMAND: &str = "CreateInstance";
+
+/// Result of a successful scene child creation command.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SceneCreateCommandResult {
+    /// Created scene instance ID.
+    pub instance_id: InstanceId,
+    /// Command result containing semantic change records.
+    pub command: CommandResult,
+}
 
 /// Renames a scene instance through the shared command result model.
 ///
@@ -25,22 +37,22 @@ pub fn rename_scene_instance(
     let new_name = new_name.into();
     let instance = scene
         .get(instance_id)
-        .map_err(|error| scene_validation_error(&error))?;
+        .map_err(|error| scene_validation_error(RENAME_INSTANCE_COMMAND, &error))?;
     let old_name = instance.name.clone();
     let guid = instance.guid;
     let old_path = scene
         .path(instance_id)
-        .map_err(|error| scene_validation_error(&error))?;
+        .map_err(|error| scene_validation_error(RENAME_INSTANCE_COMMAND, &error))?;
 
     let mut queue = SceneMutationQueue::new();
     queue.rename(instance_id, new_name.clone());
     scene
         .apply_mutations(queue)
-        .map_err(|error| scene_validation_error(&error))?;
+        .map_err(|error| scene_validation_error(RENAME_INSTANCE_COMMAND, &error))?;
 
     let new_path = scene
         .path(instance_id)
-        .map_err(|error| scene_validation_error(&error))?;
+        .map_err(|error| scene_validation_error(RENAME_INSTANCE_COMMAND, &error))?;
     let change = CommandChangeRecord::new(
         RENAME_INSTANCE_COMMAND,
         CommandTargetMode::Edit,
@@ -71,9 +83,77 @@ pub fn rename_scene_instance(
     )
 }
 
-fn scene_validation_error(error: &kinetik_scene::SceneError) -> CommandError {
+/// Creates a child scene instance through the shared command result model.
+///
+/// # Errors
+///
+/// Returns [`CommandError`] when scene validation fails before mutation.
+pub fn create_scene_child_instance(
+    scene: &mut Scene,
+    parent_id: InstanceId,
+    class_name: impl Into<String>,
+    name: impl Into<String>,
+    document_path: impl Into<String>,
+) -> CommandModelResult<SceneCreateCommandResult> {
+    let class_name = class_name.into();
+    let name = name.into();
+    let document_path = document_path.into();
+    scene
+        .get(parent_id)
+        .map_err(|error| scene_validation_error(CREATE_INSTANCE_COMMAND, &error))?;
+
+    let mut queue = SceneMutationQueue::new();
+    queue.create_child(parent_id, class_name.clone(), name.clone());
+    let results = scene
+        .apply_mutations(queue)
+        .map_err(|error| scene_validation_error(CREATE_INSTANCE_COMMAND, &error))?;
+    let instance_id = created_instance_id(&results)?;
+    let instance = scene
+        .get(instance_id)
+        .map_err(|error| scene_validation_error(CREATE_INSTANCE_COMMAND, &error))?;
+    let scene_path = scene
+        .path(instance_id)
+        .map_err(|error| scene_validation_error(CREATE_INSTANCE_COMMAND, &error))?;
+
+    let change = CommandChangeRecord::new(
+        CREATE_INSTANCE_COMMAND,
+        CommandTargetMode::Edit,
+        format!("created {scene_path}"),
+    )?
+    .with_targets(vec![ChangeTarget::Instance {
+        guid: Some(instance.guid),
+        scene_path: Some(scene_path),
+    }])
+    .with_property_value_change(PropertyValueChange::new(
+        "Name",
+        None,
+        Some(PropertyValue::String(name)),
+    ))
+    .with_affected_documents(vec![document_path]);
+
+    Ok(SceneCreateCommandResult {
+        instance_id,
+        command: CommandResult::succeeded_with_changes(
+            CREATE_INSTANCE_COMMAND,
+            CommandTargetMode::Edit,
+            [change],
+        )?,
+    })
+}
+
+fn scene_validation_error(command_kind: &str, error: &kinetik_scene::SceneError) -> CommandError {
     CommandError::ValidationFailed {
-        command_kind: RENAME_INSTANCE_COMMAND.to_owned(),
+        command_kind: command_kind.to_owned(),
         reason: error.to_string(),
+    }
+}
+
+fn created_instance_id(results: &[SceneMutationResult]) -> CommandModelResult<InstanceId> {
+    match results {
+        [SceneMutationResult::Created { id }] => Ok(*id),
+        _ => Err(CommandError::ValidationFailed {
+            command_kind: CREATE_INSTANCE_COMMAND.to_owned(),
+            reason: "scene create command did not produce one created instance".to_owned(),
+        }),
     }
 }
