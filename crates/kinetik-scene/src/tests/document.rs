@@ -56,6 +56,9 @@ fn scene_document_properties_are_ordered_by_canonical_path() {
     assert_eq!(
         document.root.properties.keys().collect::<Vec<_>>(),
         vec![
+            "Material.BaseColor",
+            "Material.Metallic",
+            "Material.Roughness",
             "Name",
             "Transform.Position",
             "Transform.Rotation",

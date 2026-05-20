@@ -29,6 +29,25 @@ fn primitive_scene() -> Scene {
     scene
 }
 
+fn pbr_material_scene() -> Scene {
+    let mut scene = primitive_scene();
+    let part = scene.get_by_path("/Game/Workspace/Block").unwrap().id;
+    scene
+        .set_property(
+            part,
+            "Material.BaseColor",
+            PropertyValue::Color(Color::rgb(0.95, 0.64, 0.18)),
+        )
+        .unwrap();
+    scene
+        .set_property(part, "Material.Metallic", PropertyValue::F32(1.0))
+        .unwrap();
+    scene
+        .set_property(part, "Material.Roughness", PropertyValue::F32(0.25))
+        .unwrap();
+    scene
+}
+
 #[test]
 fn exposes_crate_name() {
     assert_eq!(crate_name(), "kinetik-render");
@@ -55,7 +74,7 @@ fn primitive_mesh_contract_exposes_builtin_cube() {
 }
 
 #[test]
-fn extraction_collects_camera_light_and_visible_part_with_fallback_material() {
+fn extraction_collects_camera_light_and_visible_part_with_standard_material() {
     let extraction = extract_render_scene(&primitive_scene());
 
     assert!(extraction.camera.is_some());
@@ -66,10 +85,20 @@ fn extraction_collects_camera_light_and_visible_part_with_fallback_material() {
         extraction.primitives[0].material,
         StandardMaterial::FALLBACK
     );
-    assert!(extraction
+    assert!(!extraction
         .diagnostics
         .iter()
         .any(|diagnostic| diagnostic.code == MISSING_MATERIAL_CODE));
+}
+
+#[test]
+fn extraction_collects_authored_pbr_material_properties() {
+    let extraction = extract_render_scene(&pbr_material_scene());
+
+    assert_eq!(
+        extraction.primitives[0].material,
+        StandardMaterial::new(Color::rgb(0.95, 0.64, 0.18), 1.0, 0.25)
+    );
 }
 
 #[test]
@@ -119,6 +148,15 @@ fn smoke_image_is_deterministic_and_nonblank_for_primitive_scene() {
     assert_eq!(first.width(), 64);
     assert_eq!(first.height(), 48);
     assert!(first.has_non_background_pixels());
+}
+
+#[test]
+fn smoke_image_reflects_pbr_material_factors() {
+    let fallback = render_smoke_image(&extract_render_scene(&primitive_scene()), 64, 48);
+    let pbr = render_smoke_image(&extract_render_scene(&pbr_material_scene()), 64, 48);
+
+    assert_ne!(fallback, pbr);
+    assert!(pbr.has_non_background_pixels());
 }
 
 fn assert_approx_eq(actual: f32, expected: f32) {

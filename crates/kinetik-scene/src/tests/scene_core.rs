@@ -132,8 +132,23 @@ fn instance_properties_start_with_descriptor_defaults() {
         &PropertyValue::Vec3(kinetik_core::Vec3::ONE)
     );
     assert_eq!(
+        scene.get_property(part, "Material.BaseColor").unwrap(),
+        &PropertyValue::Color(kinetik_core::Color::rgb(0.78, 0.82, 0.88))
+    );
+    assert_eq!(
+        scene.get_property(part, "Material.Metallic").unwrap(),
+        &PropertyValue::F32(0.0)
+    );
+    assert_eq!(
+        scene.get_property(part, "Material.Roughness").unwrap(),
+        &PropertyValue::F32(0.65)
+    );
+    assert_eq!(
         scene.properties(part).unwrap().keys().collect::<Vec<_>>(),
         vec![
+            "Material.BaseColor",
+            "Material.Metallic",
+            "Material.Roughness",
             "Name",
             "Transform.Position",
             "Transform.Rotation",

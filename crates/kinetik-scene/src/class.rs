@@ -1,8 +1,8 @@
 use core::fmt;
 
-use kinetik_core::Vec3;
+use kinetik_core::{Color, Vec3};
 use kinetik_reflect::{
-    EditorHint, PropertyDefault, PropertyDescriptor, PropertyType, PropertyValue,
+    EditorHint, PropertyDefault, PropertyDescriptor, PropertyType, PropertyValue, ValidationRule,
 };
 
 /// Root class name required by the default scene model.
@@ -239,7 +239,7 @@ fn built_in_3d_class_descriptors() -> ClassRegistryResult<Vec<InstanceClassDescr
                 visible_property_descriptor(),
             ]),
         spatial_descriptor("Node3D", "Node3D", Vec::new())?,
-        spatial_descriptor("Part", "Part", vec![InstanceClassCapability::Renderable])?,
+        part_descriptor()?,
         spatial_descriptor(
             "Camera3D",
             "Camera3D",
@@ -247,6 +247,17 @@ fn built_in_3d_class_descriptors() -> ClassRegistryResult<Vec<InstanceClassDescr
         )?,
         spatial_descriptor("Light3D", "Light3D", vec![InstanceClassCapability::Light])?,
     ])
+}
+
+fn part_descriptor() -> ClassRegistryResult<InstanceClassDescriptor> {
+    let mut properties = shared_spatial_properties();
+    properties.extend(material_properties());
+    Ok(InstanceClassDescriptor::new("Part", "Part")?
+        .with_capabilities(vec![
+            InstanceClassCapability::Spatial,
+            InstanceClassCapability::Renderable,
+        ])
+        .with_properties(properties))
 }
 
 fn spatial_descriptor(
@@ -259,6 +270,27 @@ fn spatial_descriptor(
     Ok(InstanceClassDescriptor::new(class_name, display_name)?
         .with_capabilities(capabilities)
         .with_properties(shared_spatial_properties()))
+}
+
+fn material_properties() -> Vec<PropertyDescriptor> {
+    vec![
+        PropertyDescriptor::new("Material.BaseColor", "Base Color", PropertyType::Color)
+            .expect("built-in Material.BaseColor descriptor should be valid")
+            .with_default_value(PropertyDefault::Value(PropertyValue::Color(Color::rgb(
+                0.78, 0.82, 0.88,
+            ))))
+            .with_editor_hint(EditorHint::ColorPicker),
+        material_factor_descriptor("Material.Metallic", "Metallic", 0.0),
+        material_factor_descriptor("Material.Roughness", "Roughness", 0.65),
+    ]
+}
+
+fn material_factor_descriptor(path: &str, display_name: &str, default: f32) -> PropertyDescriptor {
+    PropertyDescriptor::new(path, display_name, PropertyType::F32)
+        .expect("built-in material factor descriptor should be valid")
+        .with_default_value(PropertyDefault::Value(PropertyValue::F32(default)))
+        .with_editor_hint(EditorHint::Slider { min: 0.0, max: 1.0 })
+        .with_validation_rules(vec![ValidationRule::RangeF32 { min: 0.0, max: 1.0 }])
 }
 
 fn shared_spatial_properties() -> Vec<PropertyDescriptor> {

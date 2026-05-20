@@ -66,7 +66,12 @@ pub fn render_smoke_image(extraction: &RenderExtraction, width: u32, height: u32
         let center_x = smoke_axis_position(primitive.transform.position.x, width);
         let center_y = smoke_axis_position(-primitive.transform.position.y, height);
         let radius = smoke_radius(index);
-        let shade = shade_color(primitive.material.base_color, index);
+        let shade = shade_color(
+            primitive.material.base_color,
+            primitive.material.metallic,
+            primitive.material.roughness,
+            index,
+        );
         fill_square(
             &mut pixels,
             width,
@@ -126,7 +131,7 @@ fn smoke_radius(index: usize) -> u32 {
     }
 }
 
-fn shade_color(color: Color, index: usize) -> Color {
+fn shade_color(color: Color, metallic: f32, roughness: f32, index: usize) -> Color {
     let multiplier = match index {
         0 => 1.0,
         1 => 0.92,
@@ -134,10 +139,12 @@ fn shade_color(color: Color, index: usize) -> Color {
         3 => 0.76,
         _ => 0.68,
     };
+    let material_response =
+        (0.58 + roughness.clamp(0.0, 1.0) * 0.32) + metallic.clamp(0.0, 1.0) * 0.10;
     Color::new(
-        color.r * multiplier,
-        color.g * multiplier,
-        color.b * multiplier,
+        color.r * multiplier * material_response,
+        color.g * multiplier * material_response,
+        color.b * multiplier * material_response,
         color.a,
     )
 }
