@@ -10,7 +10,7 @@ pub use diagnostics::{
 pub use frame::{FramePhase, FrameScheduler, FrameSignalFlush, FrameStepRecord, FrameStepResult};
 pub use runtime_world::{
     RuntimeInstanceId, RuntimeInstanceRecord, RuntimeWorld, RuntimeWorldError, RuntimeWorldId,
-    RuntimeWorldResult,
+    RuntimeWorldResult, RUNTIME_INSTANCE_ID_START,
 };
 
 /// Returns the crate name for smoke tests and early integration checks.

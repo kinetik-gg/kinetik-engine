@@ -1,9 +1,11 @@
 mod mutating;
+mod play;
 
 pub use mutating::{
     McpMutatingCommand, McpMutationResponse, McpMutationSession, McpSceneMutationRequest,
     McpUndoRedoResponse,
 };
+pub use play::{McpPlayCommand, McpPlayCommandName, McpPlayCommandResponse, McpPlayStateResponse};
 
 use kinetik_command::{
     require_specific_target_mode, CommandError, CommandResult, CommandTargetMode,
@@ -178,6 +180,8 @@ pub struct McpEditorSnapshot {
     pub diagnostics: Vec<DiagnosticSummary>,
     /// Current dirty-state explanation.
     pub dirty_state: DirtyStateResponse,
+    /// Current play-mode runtime state.
+    pub play_state: McpPlayStateResponse,
 }
 
 /// Selection and focus requests that MCP can apply to the editor session.
@@ -359,6 +363,7 @@ impl EditorSession {
             focus: self.selection().focus().panel(),
             diagnostics,
             dirty_state: dirty_state_response(&self.dirty_state()),
+            play_state: self.mcp_play_state(),
         }
     }
 

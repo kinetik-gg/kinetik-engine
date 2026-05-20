@@ -4,6 +4,7 @@ mod explorer;
 mod inspector;
 mod mcp;
 mod persistence;
+mod play;
 mod session;
 mod shell;
 
@@ -12,12 +13,14 @@ pub use inspector::{InspectorCommandError, InspectorPropertyRow, InspectorSnapsh
 pub use mcp::{
     diagnostics_list_response, dirty_state_response, project_status_response,
     resource_manifest_response, scene_hierarchy_response, DiagnosticSummary, DirtyStateResponse,
-    McpEditorSnapshot, McpMutatingCommand, McpMutationResponse, McpMutationSession,
-    McpReadOnlyCommand, McpSceneMutationRequest, McpSelectionCommandResponse, McpSelectionRequest,
+    McpEditorSnapshot, McpMutatingCommand, McpMutationResponse, McpMutationSession, McpPlayCommand,
+    McpPlayCommandName, McpPlayCommandResponse, McpPlayStateResponse, McpReadOnlyCommand,
+    McpSceneMutationRequest, McpSelectionCommandResponse, McpSelectionRequest,
     McpSelectionResponse, McpUndoRedoResponse, ProjectStatusResponse, ResourceManifestEntrySummary,
     ResourceManifestResponse, SceneInstanceSummary,
 };
 pub use persistence::EditorPersistenceError;
+pub use play::{EditorPlayError, EditorPlaySession};
 pub use session::{
     DiagnosticPanelItem, DiagnosticsPanelState, EditorDocumentSelection, EditorFocus,
     EditorModeState, EditorSelection, EditorSession, EditorSessionProject, ExplorerCommandError,
