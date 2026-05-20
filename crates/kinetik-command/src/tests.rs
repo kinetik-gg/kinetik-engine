@@ -3,6 +3,7 @@ use super::*;
 use kinetik_core::{DiagnosticBlockingScope, DiagnosticSeverity, InstanceGuid};
 use kinetik_reflect::PropertyValue;
 
+mod asset_commands;
 mod scene_commands;
 mod scene_property_commands;
 mod script_commands;

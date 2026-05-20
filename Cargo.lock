@@ -33,6 +33,7 @@ version = "0.0.0"
 dependencies = [
  "kinetik-core",
  "kinetik-reflect",
+ "kinetik-resource",
  "kinetik-scene",
  "kinetik-script",
 ]
