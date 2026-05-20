@@ -11,8 +11,10 @@
 - `kinetik-scene`: instance hierarchy, transforms, and scene serialization contracts.
 - `kinetik-signal`: deterministic signal/event bus.
 - `kinetik-resource`: asset paths, handles, metadata, cache/import skeleton.
-- `kinetik-script`: runtime-agnostic script lifecycle contracts.
-- `kinetik-script-luau`: Luau VM bridge and typed API generation from reflection metadata.
+- `kinetik-script`: runtime-agnostic script lifecycle, attachment,
+  diagnostics, provenance, and handle contracts.
+- `kinetik-script-luau`: Luau VM bridge and Luau-specific typed API generation
+  from reflection metadata.
 - `kinetik-render`: wgpu renderer, PBR, material/shader system.
 - `kinetik-physics`: Rapier-backed instance-authored physics.
 - `kinetik-audio`: buses, playback, spatial audio abstractions.
