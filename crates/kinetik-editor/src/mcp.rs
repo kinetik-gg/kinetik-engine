@@ -1,3 +1,10 @@
+mod mutating;
+
+pub use mutating::{
+    McpMutatingCommand, McpMutationResponse, McpMutationSession, McpSceneMutationRequest,
+    McpUndoRedoResponse,
+};
+
 use kinetik_command::DirtyStateExplanation;
 use kinetik_core::{Diagnostic, DiagnosticBlockingScope, DiagnosticSeverity, InstanceGuid};
 use kinetik_project::{ProjectDocumentRefs, ProjectSettingsDocument};

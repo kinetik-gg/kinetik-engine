@@ -5,8 +5,9 @@ mod mcp;
 pub use mcp::{
     diagnostics_list_response, dirty_state_response, project_status_response,
     resource_manifest_response, scene_hierarchy_response, DiagnosticSummary, DirtyStateResponse,
-    McpReadOnlyCommand, ProjectStatusResponse, ResourceManifestEntrySummary,
-    ResourceManifestResponse, SceneInstanceSummary,
+    McpMutatingCommand, McpMutationResponse, McpMutationSession, McpReadOnlyCommand,
+    McpSceneMutationRequest, McpUndoRedoResponse, ProjectStatusResponse,
+    ResourceManifestEntrySummary, ResourceManifestResponse, SceneInstanceSummary,
 };
 
 /// Returns the crate name for smoke tests and early integration checks.
@@ -48,6 +49,20 @@ mod tests {
             McpReadOnlyCommand::DirtyState.as_str(),
             "editor.dirty_state"
         );
+    }
+
+    #[test]
+    fn mcp_mutating_command_names_are_stable() {
+        assert_eq!(
+            McpMutatingCommand::SceneCreateInstance.as_str(),
+            "scene.create_instance"
+        );
+        assert_eq!(
+            McpMutatingCommand::SceneDeleteInstance.as_str(),
+            "scene.delete_instance"
+        );
+        assert_eq!(McpMutatingCommand::EditorUndo.as_str(), "editor.undo");
+        assert_eq!(McpMutatingCommand::EditorRedo.as_str(), "editor.redo");
     }
 
     #[test]
@@ -172,5 +187,121 @@ mod tests {
             response.summaries,
             vec!["created /Game/Workspace/Block".to_owned()]
         );
+    }
+
+    #[test]
+    fn mcp_scene_create_maps_to_command_and_dirty_state() {
+        let mut scene = Scene::default_scene().expect("valid default scene");
+        let workspace = scene.get_by_path("/Game/Workspace").unwrap().id;
+        let mut session = McpMutationSession::new();
+
+        let response = session.execute_scene_mutation(
+            &mut scene,
+            McpSceneMutationRequest::CreateInstance {
+                target_mode: Some(kinetik_command::CommandTargetMode::Edit),
+                parent_id: workspace,
+                class_name: "Part".to_owned(),
+                name: "Block".to_owned(),
+            },
+            "scenes/main.knscene",
+        );
+
+        assert_eq!(response.status, kinetik_command::CommandStatus::Succeeded);
+        assert_eq!(
+            response.command_kind,
+            kinetik_command::CREATE_INSTANCE_COMMAND
+        );
+        assert_eq!(response.undo_group, Some(1));
+        assert_eq!(
+            response.change_summaries,
+            vec!["created /Game/Workspace/Block".to_owned()]
+        );
+        assert!(response.dirty_state.is_dirty);
+        assert_eq!(
+            scene.get_by_path("/Game/Workspace/Block").unwrap().name,
+            "Block"
+        );
+        assert_eq!(session.history().undo_stack().len(), 1);
+    }
+
+    #[test]
+    fn mcp_scene_property_maps_to_command_path() {
+        let mut scene = Scene::default_scene().expect("valid default scene");
+        let workspace = scene.get_by_path("/Game/Workspace").unwrap().id;
+        let mut session = McpMutationSession::new();
+
+        let response = session.execute_scene_mutation(
+            &mut scene,
+            McpSceneMutationRequest::SetProperty {
+                target_mode: Some(kinetik_command::CommandTargetMode::Edit),
+                instance_id: workspace,
+                property_path: "Name".to_owned(),
+                value: kinetik_reflect::PropertyValue::String("World".to_owned()),
+            },
+            "scenes/main.knscene",
+        );
+
+        assert_eq!(response.status, kinetik_command::CommandStatus::Succeeded);
+        assert_eq!(response.command_kind, kinetik_command::SET_PROPERTY_COMMAND);
+        assert_eq!(scene.path(workspace).unwrap(), "/Game/World");
+        assert_eq!(response.undo_group, Some(1));
+    }
+
+    #[test]
+    fn mcp_mutation_rejects_ambiguous_target_mode_before_mutation() {
+        let mut scene = Scene::default_scene().expect("valid default scene");
+        let workspace = scene.get_by_path("/Game/Workspace").unwrap().id;
+        let mut session = McpMutationSession::new();
+
+        let response = session.execute_scene_mutation(
+            &mut scene,
+            McpSceneMutationRequest::CreateInstance {
+                target_mode: None,
+                parent_id: workspace,
+                class_name: "Part".to_owned(),
+                name: "Block".to_owned(),
+            },
+            "scenes/main.knscene",
+        );
+
+        assert_eq!(response.status, kinetik_command::CommandStatus::Failed);
+        assert_eq!(
+            response.command_kind,
+            kinetik_command::CREATE_INSTANCE_COMMAND
+        );
+        assert_eq!(response.undo_group, None);
+        assert!(!response.diagnostics.is_empty());
+        assert!(scene.get_by_path("/Game/Workspace/Block").is_err());
+        assert!(session.history().undo_stack().is_empty());
+    }
+
+    #[test]
+    fn mcp_undo_redo_moves_history_stacks() {
+        let mut scene = Scene::default_scene().expect("valid default scene");
+        let workspace = scene.get_by_path("/Game/Workspace").unwrap().id;
+        let mut session = McpMutationSession::new();
+
+        session.execute_scene_mutation(
+            &mut scene,
+            McpSceneMutationRequest::CreateInstance {
+                target_mode: Some(kinetik_command::CommandTargetMode::Edit),
+                parent_id: workspace,
+                class_name: "Part".to_owned(),
+                name: "Block".to_owned(),
+            },
+            "scenes/main.knscene",
+        );
+
+        let undo = session.undo();
+        assert!(undo.moved);
+        assert_eq!(undo.undo_group, Some(1));
+        assert!(session.history().undo_stack().is_empty());
+        assert_eq!(session.history().redo_stack().len(), 1);
+
+        let redo = session.redo();
+        assert!(redo.moved);
+        assert_eq!(redo.undo_group, Some(1));
+        assert_eq!(session.history().undo_stack().len(), 1);
+        assert!(session.history().redo_stack().is_empty());
     }
 }
