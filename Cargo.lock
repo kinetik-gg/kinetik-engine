@@ -32,6 +32,7 @@ name = "kinetik-command"
 version = "0.0.0"
 dependencies = [
  "kinetik-core",
+ "kinetik-reflect",
 ]
 
 [[package]]
