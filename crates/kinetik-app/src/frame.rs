@@ -1,3 +1,5 @@
+use kinetik_signal::SignalFlushDomain;
+
 /// Runtime frame phases in deterministic execution order.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum FramePhase {
@@ -31,6 +33,18 @@ pub enum FramePhase {
     EndFrameCleanup,
 }
 
+impl FramePhase {
+    /// Returns the signal flush domain for signal flush phases.
+    #[must_use]
+    pub const fn signal_flush_domain(self) -> Option<SignalFlushDomain> {
+        match self {
+            Self::FlushFixedSignals => Some(SignalFlushDomain::FixedStep),
+            Self::FlushFrameSignals => Some(SignalFlushDomain::Frame),
+            _ => None,
+        }
+    }
+}
+
 /// Ordered record for a runtime frame phase.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct FrameStepRecord {
@@ -39,6 +53,32 @@ pub struct FrameStepRecord {
     /// Runtime frame index for this phase.
     pub frame_index: u64,
     /// Fixed-step index when this phase belongs to fixed simulation.
+    pub fixed_step_index: Option<u64>,
+}
+
+impl FrameStepRecord {
+    /// Returns signal flush metadata when this record is a signal flush phase.
+    #[must_use]
+    pub const fn signal_flush(self) -> Option<FrameSignalFlush> {
+        match self.phase.signal_flush_domain() {
+            Some(domain) => Some(FrameSignalFlush {
+                domain,
+                frame_index: self.frame_index,
+                fixed_step_index: self.fixed_step_index,
+            }),
+            None => None,
+        }
+    }
+}
+
+/// Signal flush point emitted by the frame scheduler.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct FrameSignalFlush {
+    /// Signal event domain to flush.
+    pub domain: SignalFlushDomain,
+    /// Runtime frame index for the flush.
+    pub frame_index: u64,
+    /// Fixed-step index for fixed-step signal flushes.
     pub fixed_step_index: Option<u64>,
 }
 
@@ -55,6 +95,17 @@ pub struct FrameStepResult {
     pub accumulator_seconds: f32,
     /// Ordered phase records emitted for this frame.
     pub records: Vec<FrameStepRecord>,
+}
+
+impl FrameStepResult {
+    /// Returns signal flush points in deterministic frame execution order.
+    #[must_use]
+    pub fn signal_flushes(&self) -> Vec<FrameSignalFlush> {
+        self.records
+            .iter()
+            .filter_map(|record| record.signal_flush())
+            .collect()
+    }
 }
 
 /// Deterministic single-threaded frame scheduler.
@@ -198,6 +249,8 @@ fn push_fixed_phase_records(
 mod tests {
     use super::*;
 
+    use kinetik_signal::{SignalConnectionId, SignalOwner, SignalRegistry};
+
     #[test]
     fn frame_scheduler_emits_adr_order_without_fixed_step() {
         let mut scheduler = FrameScheduler::new(1.0 / 60.0);
@@ -263,6 +316,126 @@ mod tests {
             fixed_step_indices(&result),
             vec![1, 1, 1, 1, 1, 2, 2, 2, 2, 2]
         );
+    }
+
+    #[test]
+    fn frame_phases_map_only_signal_flush_domains() {
+        assert_eq!(
+            FramePhase::FlushFixedSignals.signal_flush_domain(),
+            Some(SignalFlushDomain::FixedStep)
+        );
+        assert_eq!(
+            FramePhase::FlushFrameSignals.signal_flush_domain(),
+            Some(SignalFlushDomain::Frame)
+        );
+        assert_eq!(FramePhase::VariableUpdate.signal_flush_domain(), None);
+        assert_eq!(FramePhase::RenderSnapshot.signal_flush_domain(), None);
+    }
+
+    #[test]
+    fn frame_scheduler_emits_signal_flushes_in_runtime_order() {
+        let mut scheduler = FrameScheduler::new(0.5);
+
+        let result = scheduler.step(1.0);
+
+        assert_eq!(
+            result.signal_flushes(),
+            vec![
+                FrameSignalFlush {
+                    domain: SignalFlushDomain::FixedStep,
+                    frame_index: 1,
+                    fixed_step_index: Some(1),
+                },
+                FrameSignalFlush {
+                    domain: SignalFlushDomain::FixedStep,
+                    frame_index: 1,
+                    fixed_step_index: Some(2),
+                },
+                FrameSignalFlush {
+                    domain: SignalFlushDomain::Frame,
+                    frame_index: 1,
+                    fixed_step_index: None,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn frame_signal_flushes_drive_domain_delivery_and_drain() {
+        let mut scheduler = FrameScheduler::new(0.5);
+        let result = scheduler.step(1.0);
+        let mut registry = SignalRegistry::default();
+        let frame_signal = registry.register("Touched").unwrap();
+        let fixed_signal = registry
+            .register_with_owner(
+                SignalOwner::Global,
+                "PhysicsTouched",
+                SignalFlushDomain::FixedStep,
+            )
+            .unwrap();
+        let frame_connection = registry.connect(frame_signal).unwrap();
+        let fixed_connection = registry.connect(fixed_signal).unwrap();
+
+        let mut delivered = Vec::new();
+        for record in &result.records {
+            match record.phase {
+                FramePhase::CollectPhysicsEvents => {
+                    registry
+                        .queue_fixed_step_event(
+                            fixed_signal,
+                            record.frame_index,
+                            record.fixed_step_index.unwrap(),
+                            None,
+                            None,
+                        )
+                        .unwrap();
+                }
+                FramePhase::VariableUpdate => {
+                    registry
+                        .queue_frame_event(frame_signal, record.frame_index, None, None)
+                        .unwrap();
+                }
+                _ => {}
+            }
+
+            if let Some(flush) = record.signal_flush() {
+                delivered.extend(
+                    registry
+                        .flush_events(flush.domain)
+                        .into_iter()
+                        .map(|delivery| {
+                            (
+                                flush.domain,
+                                flush.fixed_step_index,
+                                delivery.event.fixed_step_index,
+                                delivery.connection_id,
+                            )
+                        }),
+                );
+            }
+        }
+
+        assert_eq!(
+            delivered,
+            vec![
+                (
+                    SignalFlushDomain::FixedStep,
+                    Some(1),
+                    Some(1),
+                    fixed_connection,
+                ),
+                (
+                    SignalFlushDomain::FixedStep,
+                    Some(2),
+                    Some(2),
+                    fixed_connection,
+                ),
+                (SignalFlushDomain::Frame, None, None, frame_connection),
+            ]
+        );
+        assert!(registry.events().is_empty());
+        assert_eq!(frame_connection, SignalConnectionId::new(1));
+        assert_eq!(fixed_connection, SignalConnectionId::new(2));
     }
 
     #[test]
