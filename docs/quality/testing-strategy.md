@@ -56,3 +56,22 @@ Minimum expectations for early serialization work:
 
 Do not defer serialization validation until editor integration; late format
 changes are expensive and risk corrupting project source.
+
+## Template Verification
+
+First-party templates are acceptance targets under `templates/`; examples are
+illustrative samples and do not carry the same verification burden.
+
+Template PRs must include:
+
+- A template-local `README.md` and `VERIFY.md`.
+- Golden fixture updates for deterministic project, scene, manifest, generated
+  output, or stable diagnostic changes.
+- Headless or MCP checks for behavior that does not require visual inspection.
+- Screenshot or manual verification notes for visual behavior until automated
+  screenshot comparison exists.
+- Follow-up issue links for any verification gap that is intentionally deferred.
+
+Template fixtures follow the same determinism rules as serialization fixtures:
+no committed cache output, wall-clock timestamps, absolute local paths,
+unseeded random IDs, or network-dependent default checks.
