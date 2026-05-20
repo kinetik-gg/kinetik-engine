@@ -21,10 +21,11 @@ pub use history::{CommandHistory, UndoGroupId, UndoRedoRecord};
 pub use mode::{CommandStatus, CommandTargetMode};
 pub use result::CommandResult;
 pub use scene::{
-    create_scene_child_instance, delete_scene_instance, rename_scene_instance,
-    reparent_scene_instance, set_scene_instance_property, SceneCreateCommandResult,
-    SceneDeleteCommandResult, SceneReparentCommandResult, SceneSetPropertyCommandResult,
-    CREATE_INSTANCE_COMMAND, DELETE_INSTANCE_COMMAND, RENAME_INSTANCE_COMMAND,
+    create_scene_child_instance, delete_scene_instance, duplicate_scene_instance,
+    rename_scene_instance, reparent_scene_instance, set_scene_instance_property,
+    SceneCreateCommandResult, SceneDeleteCommandResult, SceneDuplicateCommandResult,
+    SceneReparentCommandResult, SceneSetPropertyCommandResult, CREATE_INSTANCE_COMMAND,
+    DELETE_INSTANCE_COMMAND, DUPLICATE_INSTANCE_COMMAND, RENAME_INSTANCE_COMMAND,
     REPARENT_INSTANCE_COMMAND, SET_PROPERTY_COMMAND,
 };
 pub use target_mode::{require_specific_target_mode, require_target_mode};

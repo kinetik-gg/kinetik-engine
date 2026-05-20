@@ -66,6 +66,58 @@ fn mutation_queue_deletes_subtrees_deterministically() {
 }
 
 #[test]
+fn mutation_queue_duplicates_subtrees_deterministically() {
+    let mut scene = Scene::new();
+    let game = scene.add_root(ROOT_CLASS_NAME, "Game").unwrap();
+    let workspace = scene.add_child(game, "Workspace", "Workspace").unwrap();
+    let parent = scene.add_child(workspace, "Workspace", "Parent").unwrap();
+    let child = scene.add_child(parent, "Part", "Child").unwrap();
+    scene
+        .set_property(
+            child,
+            "Visible",
+            kinetik_reflect::PropertyValue::Bool(false),
+        )
+        .unwrap();
+
+    let mut queue = SceneMutationQueue::new();
+    queue.duplicate(parent, workspace);
+
+    assert_eq!(
+        scene.apply_mutations(queue).unwrap(),
+        vec![SceneMutationResult::Duplicated {
+            source_id: parent,
+            new_root_id: InstanceId::new(5),
+            duplicated_ids: vec![InstanceId::new(5), InstanceId::new(6)]
+        }]
+    );
+    assert_eq!(
+        scene.children(workspace).unwrap(),
+        &[parent, InstanceId::new(5)]
+    );
+    assert_eq!(
+        scene.path(InstanceId::new(5)).unwrap(),
+        "/Game/Workspace/Parent"
+    );
+    assert_eq!(
+        scene.path(InstanceId::new(6)).unwrap(),
+        "/Game/Workspace/Parent/Child"
+    );
+    assert_ne!(
+        scene.get(parent).unwrap().guid,
+        scene.get(InstanceId::new(5)).unwrap().guid
+    );
+    assert_ne!(
+        scene.get(child).unwrap().guid,
+        scene.get(InstanceId::new(6)).unwrap().guid
+    );
+    assert_eq!(
+        scene.get_property(InstanceId::new(6), "Visible").unwrap(),
+        &kinetik_reflect::PropertyValue::Bool(false)
+    );
+}
+
+#[test]
 fn mutation_queue_rejects_invalid_handles_and_classes() {
     let mut scene = Scene::default_scene().unwrap();
     let workspace = scene.get_by_path("/Game/Workspace").unwrap().id;
@@ -96,6 +148,15 @@ fn mutation_queue_rejects_invalid_handles_and_classes() {
             id: InstanceId::new(99)
         }
     );
+
+    let mut invalid_duplicate_source = SceneMutationQueue::new();
+    invalid_duplicate_source.duplicate(InstanceId::new(99), workspace);
+    assert_eq!(
+        scene.apply_mutations(invalid_duplicate_source).unwrap_err(),
+        SceneError::InvalidInstanceId {
+            id: InstanceId::new(99)
+        }
+    );
 }
 
 #[test]
@@ -117,6 +178,13 @@ fn mutation_queue_rejects_root_and_cycle_operations() {
     assert_eq!(
         scene.apply_mutations(reparent_root).unwrap_err(),
         SceneError::CannotReparentRoot { root_id: game }
+    );
+
+    let mut duplicate_root = SceneMutationQueue::new();
+    duplicate_root.duplicate(game, workspace);
+    assert_eq!(
+        scene.apply_mutations(duplicate_root).unwrap_err(),
+        SceneError::CannotDuplicateRoot { root_id: game }
     );
 
     let mut cycle = SceneMutationQueue::new();

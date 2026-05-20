@@ -65,6 +65,11 @@ impl SceneMutationQueue {
         self.push(SceneMutation::Reparent { id, new_parent });
     }
 
+    /// Queues subtree duplication under a new parent.
+    pub fn duplicate(&mut self, id: InstanceId, new_parent: InstanceId) {
+        self.push(SceneMutation::Duplicate { id, new_parent });
+    }
+
     /// Returns queued mutations in deterministic apply order.
     #[must_use]
     pub fn mutations(&self) -> &[SceneMutation] {
@@ -115,6 +120,13 @@ pub enum SceneMutation {
         /// Target parent instance.
         new_parent: InstanceId,
     },
+    /// Duplicate an instance subtree under a target parent.
+    Duplicate {
+        /// Root of the source subtree to duplicate.
+        id: InstanceId,
+        /// Target parent for the duplicated subtree root.
+        new_parent: InstanceId,
+    },
 }
 
 /// Result produced by applying a scene structural mutation.
@@ -145,6 +157,15 @@ pub enum SceneMutationResult {
         old_parent: Option<InstanceId>,
         /// New parent.
         new_parent: InstanceId,
+    },
+    /// Instance subtree was duplicated.
+    Duplicated {
+        /// Source subtree root ID.
+        source_id: InstanceId,
+        /// Duplicated subtree root ID.
+        new_root_id: InstanceId,
+        /// Duplicated IDs in deterministic parent-before-child order.
+        duplicated_ids: Vec<InstanceId>,
     },
 }
 
@@ -204,7 +225,63 @@ impl Scene {
                     new_parent,
                 })
             }
+            SceneMutation::Duplicate { id, new_parent } => {
+                let (new_root_id, duplicated_ids) = self.duplicate_subtree(id, new_parent)?;
+                Ok(SceneMutationResult::Duplicated {
+                    source_id: id,
+                    new_root_id,
+                    duplicated_ids,
+                })
+            }
         }
+    }
+
+    fn duplicate_subtree(
+        &mut self,
+        id: InstanceId,
+        new_parent: InstanceId,
+    ) -> SceneResult<(InstanceId, Vec<InstanceId>)> {
+        self.index_of(id)?;
+        self.index_of(new_parent)?;
+        if Some(id) == self.root {
+            return Err(SceneError::CannotDuplicateRoot { root_id: id });
+        }
+
+        let mut duplicated_ids = Vec::new();
+        let new_root_id = self.duplicate_subtree_inner(id, new_parent, &mut duplicated_ids)?;
+        self.advance_transform_revision();
+        Ok((new_root_id, duplicated_ids))
+    }
+
+    fn duplicate_subtree_inner(
+        &mut self,
+        source_id: InstanceId,
+        parent: InstanceId,
+        duplicated_ids: &mut Vec<InstanceId>,
+    ) -> SceneResult<InstanceId> {
+        let source = self.get(source_id)?.clone();
+        let new_id = self.next_instance_id();
+        let new_guid = self.next_instance_guid();
+
+        self.instances.push(crate::InstanceRecord {
+            id: new_id,
+            guid: new_guid,
+            class_name: source.class_name,
+            name: source.name,
+            parent: Some(parent),
+            children: Vec::new(),
+            properties: source.properties,
+        });
+        duplicated_ids.push(new_id);
+
+        let parent_index = self.index_of(parent)?;
+        self.instances[parent_index].children.push(new_id);
+
+        for child_id in source.children {
+            self.duplicate_subtree_inner(child_id, new_id, duplicated_ids)?;
+        }
+
+        Ok(new_id)
     }
     fn delete_instance(&mut self, id: InstanceId) -> SceneResult<Vec<InstanceId>> {
         let index = self.index_of(id)?;

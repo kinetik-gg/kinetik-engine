@@ -19,6 +19,9 @@ pub const DELETE_INSTANCE_COMMAND: &str = "DeleteInstance";
 /// Stable command kind for edit-mode scene instance reparenting.
 pub const REPARENT_INSTANCE_COMMAND: &str = "ReparentInstance";
 
+/// Stable command kind for edit-mode scene instance duplication.
+pub const DUPLICATE_INSTANCE_COMMAND: &str = "DuplicateInstance";
+
 /// Stable command kind for edit-mode reflected property changes.
 pub const SET_PROPERTY_COMMAND: &str = "SetProperty";
 
@@ -55,6 +58,19 @@ pub struct SceneReparentCommandResult {
     pub command: CommandResult,
 }
 
+/// Result of a successful scene instance duplicate command.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SceneDuplicateCommandResult {
+    /// Source scene instance ID.
+    pub source_id: InstanceId,
+    /// Duplicated root scene instance ID.
+    pub new_root_id: InstanceId,
+    /// Duplicated instance IDs in deterministic parent-before-child order.
+    pub duplicated_ids: Vec<InstanceId>,
+    /// Command result containing semantic change records.
+    pub command: CommandResult,
+}
+
 /// Result of a successful scene reflected property set command.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SceneSetPropertyCommandResult {
@@ -68,6 +84,77 @@ pub struct SceneSetPropertyCommandResult {
     pub new_value: PropertyValue,
     /// Command result containing semantic change records.
     pub command: CommandResult,
+}
+
+/// Duplicates a scene instance subtree through the shared command result model.
+///
+/// # Errors
+///
+/// Returns [`CommandError`] when scene validation fails before mutation.
+pub fn duplicate_scene_instance(
+    scene: &mut Scene,
+    instance_id: InstanceId,
+    new_parent: InstanceId,
+    document_path: impl Into<String>,
+) -> CommandModelResult<SceneDuplicateCommandResult> {
+    let document_path = document_path.into();
+    let instance = scene
+        .get(instance_id)
+        .map_err(|error| scene_validation_error(DUPLICATE_INSTANCE_COMMAND, &error))?;
+    let source_guid = instance.guid;
+    let source_name = instance.name.clone();
+    let old_path = scene
+        .path(instance_id)
+        .map_err(|error| scene_validation_error(DUPLICATE_INSTANCE_COMMAND, &error))?;
+    scene
+        .get(new_parent)
+        .map_err(|error| scene_validation_error(DUPLICATE_INSTANCE_COMMAND, &error))?;
+
+    let mut queue = SceneMutationQueue::new();
+    queue.duplicate(instance_id, new_parent);
+    let results = scene
+        .apply_mutations(queue)
+        .map_err(|error| scene_validation_error(DUPLICATE_INSTANCE_COMMAND, &error))?;
+    let (new_root_id, duplicated_ids) = duplicated_instance_ids(&results)?;
+    let new_instance = scene
+        .get(new_root_id)
+        .map_err(|error| scene_validation_error(DUPLICATE_INSTANCE_COMMAND, &error))?;
+    let new_path = scene
+        .path(new_root_id)
+        .map_err(|error| scene_validation_error(DUPLICATE_INSTANCE_COMMAND, &error))?;
+
+    let change = CommandChangeRecord::new(
+        DUPLICATE_INSTANCE_COMMAND,
+        CommandTargetMode::Edit,
+        format!("duplicated {old_path} to {new_path}"),
+    )?
+    .with_targets(vec![
+        ChangeTarget::Instance {
+            guid: Some(source_guid),
+            scene_path: Some(old_path),
+        },
+        ChangeTarget::Instance {
+            guid: Some(new_instance.guid),
+            scene_path: Some(new_path),
+        },
+    ])
+    .with_property_value_change(PropertyValueChange::new(
+        "Name",
+        None,
+        Some(PropertyValue::String(source_name)),
+    ))
+    .with_affected_documents(vec![document_path]);
+
+    Ok(SceneDuplicateCommandResult {
+        source_id: instance_id,
+        new_root_id,
+        duplicated_ids,
+        command: CommandResult::succeeded_with_changes(
+            DUPLICATE_INSTANCE_COMMAND,
+            CommandTargetMode::Edit,
+            [change],
+        )?,
+    })
 }
 
 /// Renames a scene instance through the shared command result model.
@@ -407,6 +494,22 @@ fn reparented_old_parent(
         _ => Err(CommandError::ValidationFailed {
             command_kind: REPARENT_INSTANCE_COMMAND.to_owned(),
             reason: "scene reparent command did not produce one moved instance".to_owned(),
+        }),
+    }
+}
+
+fn duplicated_instance_ids(
+    results: &[SceneMutationResult],
+) -> CommandModelResult<(InstanceId, Vec<InstanceId>)> {
+    match results {
+        [SceneMutationResult::Duplicated {
+            source_id: _,
+            new_root_id,
+            duplicated_ids,
+        }] => Ok((*new_root_id, duplicated_ids.clone())),
+        _ => Err(CommandError::ValidationFailed {
+            command_kind: DUPLICATE_INSTANCE_COMMAND.to_owned(),
+            reason: "scene duplicate command did not produce one duplicated subtree".to_owned(),
         }),
     }
 }
