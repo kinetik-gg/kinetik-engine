@@ -8,18 +8,27 @@ fn runtime_world_clone_preserves_edit_guid_mapping() {
     let world = RuntimeWorld::clone_from_edit_scene(RuntimeWorldId::new(1), &scene).unwrap();
 
     assert_eq!(world.id(), RuntimeWorldId::new(1));
-    assert_eq!(world.root_id(), Some(RuntimeInstanceId::new(1)));
     assert_eq!(
-        world.runtime_id_for_edit_guid(document.root.guid),
-        Some(RuntimeInstanceId::new(1))
+        world.root_id(),
+        Some(RuntimeInstanceId::new(RUNTIME_INSTANCE_ID_START))
     );
     assert_eq!(
-        world.get(RuntimeInstanceId::new(1)).unwrap().class_name,
+        world.runtime_id_for_edit_guid(document.root.guid),
+        Some(RuntimeInstanceId::new(RUNTIME_INSTANCE_ID_START))
+    );
+    assert_eq!(
+        world
+            .get(RuntimeInstanceId::new(RUNTIME_INSTANCE_ID_START))
+            .unwrap()
+            .class_name,
         ROOT_CLASS_NAME
     );
     assert_eq!(
-        world.get(RuntimeInstanceId::new(2)).unwrap().parent,
-        Some(RuntimeInstanceId::new(1))
+        world
+            .get(RuntimeInstanceId::new(RUNTIME_INSTANCE_ID_START + 1))
+            .unwrap()
+            .parent,
+        Some(RuntimeInstanceId::new(RUNTIME_INSTANCE_ID_START))
     );
 }
 
@@ -49,8 +58,13 @@ fn runtime_world_clone_uses_deterministic_parent_before_child_order() {
         ]
     );
     assert_eq!(
-        world.get(RuntimeInstanceId::new(1)).unwrap().children,
-        (2..=10).map(RuntimeInstanceId::new).collect::<Vec<_>>()
+        world
+            .get(RuntimeInstanceId::new(RUNTIME_INSTANCE_ID_START))
+            .unwrap()
+            .children,
+        (RUNTIME_INSTANCE_ID_START + 1..=RUNTIME_INSTANCE_ID_START + 9)
+            .map(RuntimeInstanceId::new)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -64,8 +78,14 @@ fn runtime_world_clone_does_not_require_edit_instance_ids() {
 
     let world = RuntimeWorld::clone_from_edit_scene(RuntimeWorldId::new(3), &scene).unwrap();
 
-    assert_eq!(world.root_id().unwrap().raw(), 1);
-    assert_eq!(world.get(RuntimeInstanceId::new(2)).unwrap().name, "Node");
+    assert_eq!(world.root_id().unwrap().raw(), RUNTIME_INSTANCE_ID_START);
+    assert_eq!(
+        world
+            .get(RuntimeInstanceId::new(RUNTIME_INSTANCE_ID_START + 1))
+            .unwrap()
+            .name,
+        "Node"
+    );
     assert_eq!(edit_root_raw, 1);
     assert_eq!(edit_node_raw, 2);
     assert_ne!(
@@ -88,14 +108,17 @@ fn runtime_world_clone_requires_edit_scene_root() {
 fn runtime_spawn_creates_runtime_only_child_identity() {
     let scene = kinetik_scene::Scene::default_scene().unwrap();
     let mut world = RuntimeWorld::clone_from_edit_scene(RuntimeWorldId::new(1), &scene).unwrap();
-    let parent = RuntimeInstanceId::new(2);
+    let parent = RuntimeInstanceId::new(RUNTIME_INSTANCE_ID_START + 1);
 
     let spawned = world
         .spawn_runtime_child(parent, "Part", "RuntimeBlock")
         .unwrap();
 
     let spawned_record = world.get(spawned).unwrap();
-    assert_eq!(spawned, RuntimeInstanceId::new(11));
+    assert_eq!(
+        spawned,
+        RuntimeInstanceId::new(RUNTIME_INSTANCE_ID_START + 10)
+    );
     assert_eq!(spawned_record.edit_guid, None);
     assert_eq!(spawned_record.parent, Some(parent));
     assert_eq!(spawned_record.class_name, "Part");
@@ -113,21 +136,33 @@ fn runtime_spawn_rejects_missing_parent_and_invalid_names() {
 
     assert_eq!(
         world
-            .spawn_runtime_child(RuntimeInstanceId::new(99), "Part", "Block")
+            .spawn_runtime_child(
+                RuntimeInstanceId::new(RUNTIME_INSTANCE_ID_START + 98),
+                "Part",
+                "Block"
+            )
             .unwrap_err(),
         RuntimeWorldError::MissingParent {
-            parent: RuntimeInstanceId::new(99)
+            parent: RuntimeInstanceId::new(RUNTIME_INSTANCE_ID_START + 98)
         }
     );
     assert_eq!(
         world
-            .spawn_runtime_child(RuntimeInstanceId::new(1), "  ", "Block")
+            .spawn_runtime_child(
+                RuntimeInstanceId::new(RUNTIME_INSTANCE_ID_START),
+                "  ",
+                "Block"
+            )
             .unwrap_err(),
         RuntimeWorldError::EmptyClassName
     );
     assert_eq!(
         world
-            .spawn_runtime_child(RuntimeInstanceId::new(1), "Part", "Bad/Name")
+            .spawn_runtime_child(
+                RuntimeInstanceId::new(RUNTIME_INSTANCE_ID_START),
+                "Part",
+                "Bad/Name"
+            )
             .unwrap_err(),
         RuntimeWorldError::InvalidInstanceName {
             name: "Bad/Name".to_owned()
@@ -139,7 +174,7 @@ fn runtime_spawn_rejects_missing_parent_and_invalid_names() {
 fn runtime_despawn_removes_subtree_and_parent_links() {
     let scene = kinetik_scene::Scene::default_scene().unwrap();
     let mut world = RuntimeWorld::clone_from_edit_scene(RuntimeWorldId::new(1), &scene).unwrap();
-    let parent = RuntimeInstanceId::new(2);
+    let parent = RuntimeInstanceId::new(RUNTIME_INSTANCE_ID_START + 1);
     let child = world
         .spawn_runtime_child(parent, "Node3D", "RuntimeParent")
         .unwrap();
@@ -162,10 +197,10 @@ fn runtime_despawn_rejects_missing_instance_and_root() {
 
     assert_eq!(
         world
-            .despawn_runtime_subtree(RuntimeInstanceId::new(99))
+            .despawn_runtime_subtree(RuntimeInstanceId::new(RUNTIME_INSTANCE_ID_START + 98))
             .unwrap_err(),
         RuntimeWorldError::InvalidInstance {
-            id: RuntimeInstanceId::new(99)
+            id: RuntimeInstanceId::new(RUNTIME_INSTANCE_ID_START + 98)
         }
     );
     assert_eq!(
@@ -173,7 +208,7 @@ fn runtime_despawn_rejects_missing_instance_and_root() {
             .despawn_runtime_subtree(world.root_id().unwrap())
             .unwrap_err(),
         RuntimeWorldError::CannotDespawnRoot {
-            root: RuntimeInstanceId::new(1)
+            root: RuntimeInstanceId::new(RUNTIME_INSTANCE_ID_START)
         }
     );
 }

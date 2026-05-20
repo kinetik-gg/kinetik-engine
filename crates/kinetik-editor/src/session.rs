@@ -14,7 +14,7 @@ use kinetik_project::ProjectModel;
 use kinetik_resource::AssetManifest;
 use kinetik_scene::{Scene, SceneResult};
 
-use crate::{EditorPanel, ExplorerSnapshot};
+use crate::{EditorPanel, EditorPlaySession, ExplorerSnapshot};
 
 /// Lightweight project/session view exposed by the editor session.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -269,6 +269,7 @@ pub struct EditorSession {
     pub(crate) command_history: CommandHistory,
     pub(crate) session_diagnostics: Vec<Diagnostic>,
     pub(crate) mode: EditorModeState,
+    pub(crate) play: Option<EditorPlaySession>,
 }
 
 /// Error returned by command-backed Explorer actions.
@@ -326,6 +327,7 @@ impl EditorSession {
         self.command_history = CommandHistory::new();
         self.session_diagnostics.clear();
         self.mode = EditorModeState::Edit;
+        self.play = None;
     }
 
     /// Closes the current project and clears editor-only state.
@@ -337,6 +339,7 @@ impl EditorSession {
         self.command_history = CommandHistory::new();
         self.session_diagnostics.clear();
         self.mode = EditorModeState::Edit;
+        self.play = None;
     }
 
     /// Returns whether a project is open.
@@ -568,7 +571,12 @@ impl EditorSession {
             .into_iter()
             .flat_map(|project| project.diagnostics().diagnostics());
         let session_diagnostics = self.session_diagnostics.iter();
-        DiagnosticsPanelState::from_diagnostics(project_diagnostics.chain(session_diagnostics))
+        let play_diagnostics = self.play_diagnostics().iter();
+        DiagnosticsPanelState::from_diagnostics(
+            project_diagnostics
+                .chain(session_diagnostics)
+                .chain(play_diagnostics),
+        )
     }
 
     /// Returns current edit/play mode ownership.
@@ -580,11 +588,6 @@ impl EditorSession {
     /// Marks the editor session as owning play mode.
     pub fn enter_play_mode(&mut self) {
         self.mode = EditorModeState::Play;
-    }
-
-    /// Returns ownership to edit mode.
-    pub fn stop_play_mode(&mut self) {
-        self.mode = EditorModeState::Edit;
     }
 
     pub(crate) fn active_scene_document_path(&self) -> Result<String, ExplorerCommandError> {

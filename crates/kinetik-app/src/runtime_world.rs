@@ -3,6 +3,12 @@ use core::{fmt, num::NonZeroU64};
 use kinetik_core::InstanceGuid;
 use kinetik_scene::{Scene, SceneError, SceneInstanceDocument};
 
+/// First runtime-owned instance ID assigned to cloned edit-scene instances.
+///
+/// Runtime IDs are intentionally outside the early edit-scene ID range so
+/// tests and diagnostics can catch accidental edit/runtime ID confusion.
+pub const RUNTIME_INSTANCE_ID_START: u64 = 1_000_000;
+
 /// Runtime world ID.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RuntimeWorldId(NonZeroU64);
@@ -158,7 +164,7 @@ impl RuntimeWorld {
             id,
             instances: Vec::new(),
             root: None,
-            next_instance_id: 1,
+            next_instance_id: RUNTIME_INSTANCE_ID_START,
         };
         let root = world.clone_document_instance(document.root, None);
         world.root = Some(root);
