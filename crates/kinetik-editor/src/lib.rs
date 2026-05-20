@@ -7,6 +7,7 @@ mod persistence;
 mod play;
 mod session;
 mod shell;
+mod viewport;
 
 pub use explorer::{ExplorerRow, ExplorerSnapshot};
 pub use inspector::{InspectorCommandError, InspectorPropertyRow, InspectorSnapshot};
@@ -16,8 +17,9 @@ pub use mcp::{
     McpEditorSnapshot, McpMutatingCommand, McpMutationResponse, McpMutationSession, McpPlayCommand,
     McpPlayCommandName, McpPlayCommandResponse, McpPlayStateResponse, McpReadOnlyCommand,
     McpSceneMutationRequest, McpSelectionCommandResponse, McpSelectionRequest,
-    McpSelectionResponse, McpUndoRedoResponse, ProjectStatusResponse, ResourceManifestEntrySummary,
-    ResourceManifestResponse, SceneInstanceSummary,
+    McpSelectionResponse, McpUndoRedoResponse, McpViewportFocusResponse, McpViewportPickResponse,
+    ProjectStatusResponse, ResourceManifestEntrySummary, ResourceManifestResponse,
+    SceneInstanceSummary,
 };
 pub use persistence::EditorPersistenceError;
 pub use play::{EditorPlayError, EditorPlaySession};
@@ -28,6 +30,11 @@ pub use session::{
 pub use shell::{
     default_editor_shell_layout, run_editor_shell, EditorPanel, EditorShellError,
     EditorShellLayout, EditorShellState, EditorShellWindow, PanelDock, ToolbarAction,
+};
+pub use viewport::{
+    ViewportCameraState, ViewportError, ViewportFocusResult, ViewportFocusTarget,
+    ViewportPickRequest, ViewportPickResponse, ViewportPickStatus, ViewportPickingContract,
+    ViewportSelectionOverlay, ViewportSnapshot, ViewportState,
 };
 
 /// Returns the crate name for smoke tests and early integration checks.

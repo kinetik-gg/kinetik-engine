@@ -15,6 +15,8 @@ use kinetik_resource::AssetManifest;
 use kinetik_scene::{Scene, SceneResult};
 
 use crate::{EditorPanel, EditorPlaySession, ExplorerSnapshot};
+use crate::{ViewportError, ViewportFocusResult, ViewportPickRequest, ViewportPickResponse};
+use crate::{ViewportSnapshot, ViewportState};
 
 /// Lightweight project/session view exposed by the editor session.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -270,6 +272,7 @@ pub struct EditorSession {
     pub(crate) session_diagnostics: Vec<Diagnostic>,
     pub(crate) mode: EditorModeState,
     pub(crate) play: Option<EditorPlaySession>,
+    pub(crate) viewport: ViewportState,
 }
 
 /// Error returned by command-backed Explorer actions.
@@ -328,6 +331,7 @@ impl EditorSession {
         self.session_diagnostics.clear();
         self.mode = EditorModeState::Edit;
         self.play = None;
+        self.viewport = ViewportState::new();
     }
 
     /// Closes the current project and clears editor-only state.
@@ -340,6 +344,7 @@ impl EditorSession {
         self.session_diagnostics.clear();
         self.mode = EditorModeState::Edit;
         self.play = None;
+        self.viewport = ViewportState::new();
     }
 
     /// Returns whether a project is open.
@@ -399,6 +404,44 @@ impl EditorSession {
     #[must_use]
     pub const fn selection(&self) -> &EditorSelection {
         &self.selection
+    }
+
+    /// Returns the renderer-independent viewport state.
+    #[must_use]
+    pub const fn viewport(&self) -> &ViewportState {
+        &self.viewport
+    }
+
+    /// Returns mutable renderer-independent viewport state.
+    #[must_use]
+    pub fn viewport_mut(&mut self) -> &mut ViewportState {
+        &mut self.viewport
+    }
+
+    /// Returns a copyable viewport snapshot.
+    #[must_use]
+    pub fn viewport_snapshot(&self) -> ViewportSnapshot {
+        self.viewport.snapshot()
+    }
+
+    /// Focuses the viewport camera on the selected scene instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ViewportError`] when no active scene or scene instance
+    /// selection can be projected.
+    pub fn viewport_focus_selected(&mut self) -> Result<ViewportFocusResult, ViewportError> {
+        let scene = self
+            .active_scene
+            .as_ref()
+            .ok_or_else(|| ViewportError::Scene("no active scene is open".to_owned()))?;
+        self.viewport.focus_selected(scene, &self.selection)
+    }
+
+    /// Applies the placeholder viewport picking contract.
+    #[must_use]
+    pub fn viewport_pick(&self, request: ViewportPickRequest) -> ViewportPickResponse {
+        self.viewport.pick(request)
     }
 
     /// Returns mutable selection and focus state.
