@@ -9,6 +9,9 @@ mod session;
 mod shell;
 mod viewport;
 
+#[cfg(test)]
+mod authoring_smoke;
+
 pub use explorer::{ExplorerRow, ExplorerSnapshot};
 pub use inspector::{InspectorCommandError, InspectorPropertyRow, InspectorSnapshot};
 pub use mcp::{
