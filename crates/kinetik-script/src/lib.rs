@@ -1,31 +1,28 @@
 //! Runtime-agnostic scripting contracts for Kinetik.
+//!
+//! Concrete language bridges, such as Luau, implement these contracts without
+//! exposing VM internals to the runtime, editor, resources, or diagnostics.
 
-use kinetik_core::{InstanceId, KinetikResult};
+mod diagnostics;
+mod handles;
+mod identity;
+mod lifecycle;
+mod structural;
 
-/// Script lifecycle entry points used by concrete script runtimes.
-pub trait ScriptRuntime {
-    /// Calls an instance script's ready hook.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the script runtime cannot resolve the instance or the script hook fails.
-    fn call_ready(&mut self, instance: InstanceId) -> KinetikResult<()>;
+#[cfg(test)]
+mod tests;
 
-    /// Calls an instance script's frame update hook.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the script runtime cannot resolve the instance or the script hook fails.
-    fn call_update(&mut self, instance: InstanceId, delta_seconds: f32) -> KinetikResult<()>;
-
-    /// Calls an instance script's fixed physics update hook.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the script runtime cannot resolve the instance or the script hook fails.
-    fn call_physics_update(
-        &mut self,
-        instance: InstanceId,
-        fixed_delta_seconds: f32,
-    ) -> KinetikResult<()>;
-}
+pub use diagnostics::{
+    invalid_script_handle_diagnostic, missing_script_diagnostic, ScriptDiagnosticCode,
+    ScriptDiagnosticContext,
+};
+pub use handles::{ResourceScriptHandle, ScriptHandleError, ScriptInstanceHandle};
+pub use identity::{
+    ScriptAssetRef, ScriptAttachment, ScriptAttachmentId, ScriptAttachmentTarget, ScriptLanguage,
+};
+pub use lifecycle::{
+    LifecycleCall, LifecycleCallLog, LifecyclePhase, ScriptRuntime, ScriptRuntimeHost,
+};
+pub use structural::{
+    QueuedScriptChange, ScriptChangeQueue, ScriptPropertyValue, StructuralChangeKind,
+};
