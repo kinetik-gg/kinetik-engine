@@ -50,6 +50,7 @@ dependencies = [
  "kinetik-command",
  "kinetik-core",
  "kinetik-project",
+ "kinetik-reflect",
  "kinetik-resource",
  "kinetik-scene",
 ]

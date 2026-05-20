@@ -15,5 +15,6 @@ kinetik-core = { path = "../kinetik-core" }
 kinetik-app = { path = "../kinetik-app" }
 kinetik-command = { path = "../kinetik-command" }
 kinetik-project = { path = "../kinetik-project" }
+kinetik-reflect = { path = "../kinetik-reflect" }
 kinetik-resource = { path = "../kinetik-resource" }
 kinetik-scene = { path = "../kinetik-scene" }
