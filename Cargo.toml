@@ -3,6 +3,7 @@ members = [
     "crates/kinetik-core",
     "crates/kinetik-app",
     "crates/kinetik-scene",
+    "crates/kinetik-command",
     "crates/kinetik-resource",
     "crates/kinetik-project",
     "crates/kinetik-render",

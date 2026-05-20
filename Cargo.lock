@@ -28,6 +28,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "kinetik-command"
+version = "0.0.0"
+dependencies = [
+ "kinetik-core",
+]
+
+[[package]]
 name = "kinetik-core"
 version = "0.0.0"
 
