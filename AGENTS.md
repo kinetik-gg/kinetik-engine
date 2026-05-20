@@ -66,6 +66,11 @@ Agents may also proceed on Level 3 issues when the relevant ADRs and internal
 API specs already define the cross-crate contract and the issue does not create
 new architecture direction.
 
+Accepted ADRs, internal API specs, dependency proposals, and scoped GitHub
+issues are standing approval for the work they explicitly cover. Agents should
+not ask for extra confirmation when the task stays inside those written
+contracts and the autonomy rules above.
+
 Agents must stop and ask for human approval when any of these apply:
 
 - New dependency, dependency feature, or dependency version.
@@ -82,6 +87,15 @@ Agents must stop and ask for human approval when any of these apply:
 
 When escalation is needed, agents should present the options, recommend one,
 and wait for approval before implementation.
+
+If implementation reveals missing work that is concrete, bounded, and not
+required for the active issue, agents may create follow-up GitHub issues without
+asking. Add or update local backlog docs only when the follow-up belongs in the
+ordered implementation plan. Do not broaden the active PR to include discovered
+follow-up work. Escalate instead of creating ordinary follow-up work when the
+discovery would change architecture direction, public API compatibility,
+dependencies, unsafe boundaries, serialized formats, or editor/runtime
+boundaries.
 
 ## ADR Usage
 
@@ -186,6 +200,16 @@ Level guidance:
 - Level 3: Level 2 checks plus integration tests, fixtures, golden files, or `cargo doc --workspace --no-deps` when public APIs changed.
 - Level 4: Level 3 checks plus lifecycle/order/command/diagnostic tests and MCP or headless runtime/editor smoke when available.
 - Level 5: Level 4 checks plus screenshot/visual verification and human review.
+
+## Continuous Agent Loop
+
+For long-running autonomous implementation, use the lead-agent prompt in
+`tools/agent-loop/README.md`.
+
+One lead agent may run the loop, spawn bounded subagents, and continuously pick
+the next scoped GitHub issue or approved backlog item. The lead agent remains
+responsible for scope control, branch/worktree isolation, final integration,
+checks, PR quality, merge readiness, follow-up issues, and cleanup.
 
 ## Commit Style
 

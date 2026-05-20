@@ -11,3 +11,5 @@
 - Does it introduce a dependency?
 - Does it increase architectural complexity?
 - Are any files or objects becoming too large?
+- Were concrete out-of-scope follow-ups filed as GitHub issues?
+- Was the active PR kept scoped to one issue/backlog item?

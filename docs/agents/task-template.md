@@ -9,5 +9,6 @@ Expected outputs:
 Required tests/checks:
 Relevant docs:
 Open questions:
+Follow-up policy:
 Definition of done:
 ```
