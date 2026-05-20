@@ -1,744 +1,490 @@
-# Kinetik Milestones
+# Kinetik Studio Roadmap
+
+This is the single ordered roadmap for `kinetik-engine`.
+
+The current product target is not a demo window, a headless fixture suite, or a
+static preview. The target is a usable, production-minded game editor that can
+open a project, show the engine, let a user edit the scene, run it, save it, and
+explain what went wrong when something fails.
+
+## Product Target
+
+Kinetik Studio is usable when a developer can:
+
+- Create a project from a first-party template or open an existing project.
+- See the active scene in the editor window, not just in a test harness.
+- Select scene objects from the viewport or hierarchy.
+- Inspect and edit common object properties through the UI.
+- Add, delete, duplicate, and reparent objects with undo and redo.
+- Save, close, reopen, and get the same project state back.
+- Press play, run the scene through the engine, stop play, and return to edit
+  mode without corrupting project state.
+- See diagnostics for invalid assets, scripts, project files, rendering setup,
+  and runtime failures.
+- Import basic assets and understand missing or stale asset state.
+- Build or run an exported artifact through a minimal, documented path.
+
+The software-rendered template cards shipped after M32 are an emergency bridge:
+they prove the window paints and first-party templates are visible. They are not
+the editor goal. Any future milestone that says "editor UI" must be verifiable
+inside the app window, not only through headless tests.
+
+## Shipped Foundation
+
+The detailed M1-M32 history has been truncated because it is no longer the live
+plan. The following foundation is already shipped and should be preserved:
+
+- Core engine crates, project model, scene graph, transforms, serialization,
+  identifiers, diagnostics, and typed command surfaces.
+- Runtime frame loop, schedule phases, script lifecycle contracts, edit/play
+  boundary model, signal and event plumbing, and project validation.
+- Reflection/property metadata, inspector data model, explorer/session state,
+  undoable editor commands, MCP/editor protocol slices, and headless editor
+  smoke coverage.
+- Render extraction contracts, primitives, materials, renderer diagnostics,
+  camera/light records, template manifests, and first-party primitive, PBR, and
+  basic FPS templates.
+- Kinetik Studio window creation, visible software-rendered template cards, and
+  an idle redraw fix so the window does not burn the event loop while idle.
+
+Current limits that must not be hidden by planning language:
+
+- Studio does not yet have a real project/template launcher workflow.
+- The explorer and inspector panels are not wired to interactive user actions.
+- The viewport is not a full active scene editor viewport.
+- The GPU renderer is not embedded as the primary Studio viewport.
+- There is no viewport selection, camera navigation, transform gizmo, or overlay
+  feedback in the app window.
+- Templates are visible, but they are not yet open-edit-play-save workflows.
+- Asset import, project save/reload UX, script authoring UX, and export UX are
+  still missing.
+
+## Roadmap Rules
+
+- Work on exactly one issue or backlog slice per PR.
+- Keep slices reviewable and production-quality. Do not hide broad subsystem
+  rewrites inside editor milestones.
+- Required baseline checks remain:
+  - `cargo fmt --check`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo test --workspace`
+- Run `cargo doc --workspace --no-deps` when public APIs change.
+- Run fixture, golden, integration, headless runtime/editor, MCP, screenshot, or
+  manual UI checks required by the touched subsystem.
+- UI-facing milestones require app-window verification. Prefer screenshot or
+  deterministic smoke evidence in addition to automated model tests.
+- Do not add or upgrade dependencies without approval.
+- Do not introduce, wrap, expand, or lint-suppress unsafe Rust without approval.
+- Do not change public APIs, serialized formats, generated contracts, migrations,
+  editor/runtime boundaries, or architecture direction unless an accepted ADR or
+  internal spec explicitly covers the change.
+- Keep accepted Lua/Luau support intact. Future `kinetik-lang` `.kn` support is
+  additive and needs scoped issues/specs before changing scripting direction.
+- When a code-health problem is outside the active slice, file a scoped follow-up
+  issue with file paths, risk, and acceptance criteria instead of broadening the
+  PR.
+
+## Editor Milestones
+
+### E1: Real Project and Template Launcher
+
+Goal: Studio starts as usable software, not a passive canvas.
+
+Required behavior:
+
+- Show a Studio home view with first-party template entries and an open-project
+  entry point.
+- Let the user create a project from `primitive-showcase`, `pbr-material-demo`,
+  and `basic-fps` templates.
+- Let the user open an existing project path through the UI path supported by the
+  platform shell.
+- Surface project/template load errors in the window and logs.
+- Transition from launcher state into an active editor session.
 
-This roadmap is the local planning source. GitHub issues are the executable
-backlog. Each implementation issue should map to one branch/worktree and one
-focused patch.
+Acceptance:
 
-## Product Target: First Playable 3D Templates
+- Template creation and project opening are covered by automated tests around
+  the editor/session model.
+- A manual or screenshot smoke proves the launcher is visible and at least one
+  template transitions into an active editor view.
+- No busy idle redraw loop returns.
 
-The first public-facing proof point is a small set of polished 3D templates
-that demonstrate the engine and editor working together end to end:
+### E2: Explorer and Inspector Wiring
 
-- Basic primitive showcase.
-- PBR material demo scene.
-- Basic FPS prototype.
+Goal: the side panels represent the actual project state and can drive editing.
 
-These templates are acceptance targets, not side demos. Roadmap work should
-prioritize capabilities that make these projects authorable, inspectable,
-playable, diagnosable, and eventually packageable through Kinetik workflows.
+Required behavior:
 
-Near-term template work is 3D-first. 2D templates, multiplayer, AI combat,
-inventory systems, networking, and large content production are out of scope
-until the first 3D template set is proven.
+- Explorer lists the active scene hierarchy from the loaded project.
+- Selection in the explorer updates editor selection state.
+- Inspector shows common selected-object properties: name, transform, enabled
+  state, material/render records when present, and script records when present.
+- Editing supported inspector fields dispatches existing undoable commands.
+- Invalid edits produce visible diagnostics instead of silent failures.
 
-Relevant accepted ADRs:
+Acceptance:
 
-- ADR 0006: Renderer and Shader Graph.
-- ADR 0019: Edit, Play, and Runtime State Boundaries.
-- ADR 0020: Runtime Execution Model.
+- Model tests prove selection and inspector edits flow through commands.
+- Manual or screenshot smoke proves hierarchy and inspector panels are populated
+  from a loaded template.
 
-## Planning Corrections
+### E3: Active Software Viewport Baseline
 
-The roadmap must not jump from early scene/project scaffolds into editor or
-template work without the engine substrate those workflows need.
+Goal: replace static template cards with one active scene viewport that responds
+to the editor session.
 
-Before deeper runtime, editor, MCP, or template implementation, agents must have
-enough written contract to avoid inventing APIs during feature work:
+Required behavior:
 
-- Dependency-backed systems need dependency surveys or proposals before crates
-  are added.
-- Architecture-sensitive implementation needs internal API specs before code
-  starts.
-- Editor work must consume project, scene, reflection, command, diagnostics,
-  resource, and runtime APIs instead of creating private editor-only behavior.
-- Play mode must use a runtime sandbox derived from edit state, not mutate saved
-  project state directly.
-- Template milestones are acceptance targets. They should not pull unplanned
-  engine/editor behavior into narrow content patches.
+- Studio shows one active scene viewport after a project/template is loaded.
+- The viewport draws the loaded scene with the existing software presentation
+  path while the GPU viewport is prepared.
+- Selection changes are visible in the viewport.
+- Resize and scale-factor changes keep the viewport correctly framed.
+- The window repaints on actual state changes without spinning while idle.
 
-## M1: Core Foundation
+Acceptance:
 
-Goal: establish the shared primitives that every later crate depends on.
+- Automated smoke covers viewport model output for all first-party templates.
+- Manual or screenshot smoke proves the active viewport is visible in the app
+  window after opening a template.
 
-Key outputs:
+### E4: Editing Actions, Undo, and Redo
 
-- Typed ID and GUID policy.
-- Shared error and diagnostic primitives.
-- Core value primitives needed by reflection and scenes.
-- Reflection descriptor foundation.
-- Baseline test fixtures.
+Goal: users can change a scene without editing files by hand.
 
-Representative issues:
+Required behavior:
 
-- Core typed ID invariants.
-- Core diagnostic and error foundation.
-- Core math/value primitives.
-- Reflection descriptor model.
-- Reflection value container.
-- Test fixture crate.
+- Add, delete, duplicate, rename, and reparent scene objects from the UI.
+- Edit transform values from the inspector.
+- Provide toolbar/menu/keyboard entry points for undo and redo.
+- Show dirty state after edits and clear it after save.
+- Keep command ownership explicit and testable.
 
-## M2: Scene and Instance Core
+Acceptance:
 
-Goal: build the deterministic in-memory scene and instance model.
+- Command tests cover each edit action and undo/redo behavior.
+- Manual smoke proves a user can edit a template scene, undo, redo, and see the
+  UI update.
 
-Key outputs:
+### E5: Save, Reload, and Recent Projects
 
-- Root `Game` instance.
-- Default service instances.
-- Instance class registry scaffold.
-- Parent/child hierarchy.
-- GUID/runtime ID/path lookup.
-- Reflected property storage and validation.
-- Structural mutation APIs.
+Goal: project state survives normal editor use.
 
-Representative issues:
+Required behavior:
 
-- Scene instance class registry scaffold.
-- Scene hierarchy model.
-- Default scene scaffold.
-- Instance property storage.
-- Scene structural mutation queue.
+- Save the active project through the UI.
+- Reload a saved project and preserve edited hierarchy, transforms, material
+  records, and script records supported by the current schema.
+- Warn before destructive close/open actions when the project is dirty.
+- Track recent projects using a deterministic local settings file.
+- Report save/load errors in diagnostics.
 
-## M3: Project Serialization and Assets
+Acceptance:
 
-Goal: make Kinetik projects scaffoldable, loadable, and Git-friendly.
+- Round-trip tests cover edited project save/reload.
+- Manual smoke proves edit, save, close/reopen, and inspect works from Studio.
 
-Key outputs:
+### E6: Play Mode in the UI
 
-- Project layout model.
-- `Kinetik.toml` contract.
-- `assets.knmanifest` in-memory model.
-- Asset identity and `res://` references.
-- TOML/RON dependency proposal.
-- Deterministic scene and manifest serialization.
-- Golden fixtures.
+Goal: the editor can run the game and return to editing.
 
-Representative issues:
+Required behavior:
 
-- Resource asset identity model.
-- Resource manifest in-memory model.
-- Serialization dependency proposal.
-- Project layout scaffold model.
-- Scene serialization contracts.
-- Asset manifest serialization contracts.
+- Toolbar exposes play, stop, and pause/step if supported by the runtime model.
+- Play mode runs the active scene through runtime entry points.
+- Edit mode state is restored after stop.
+- Runtime diagnostics and script failures are visible in Studio.
+- Template play requirements are explicit in template manifests or docs.
 
-## M4: Engine Dependency Surveys
+Acceptance:
 
-Goal: review dependency choices before implementation crates add external
-libraries or shape public APIs around them.
+- Runtime/editor tests prove edit-to-play and play-to-edit state transitions.
+- Manual smoke proves at least one first-party template can be played and stopped
+  from the app window.
 
-Key outputs:
+### E7: First True GPU Viewport
 
-- Surveys/proposals for core utilities, runtime/app, renderer, editor/window/UI,
-  physics, asset import, and Luau.
-- Explicit crate ownership, license/safety review, transitive-risk notes, unsafe
-  exposure, platform support, build impact, and public API boundary guidance.
-- Serialization dependency proposal completed or updated for `serde`, TOML, and
-  RON.
+Goal: the engine renderer appears inside Studio as the primary viewport.
 
-Representative issues: core dependency survey; renderer dependency proposal;
-editor/window/UI dependency proposal; physics, asset import, and Luau dependency
-proposals.
+Required behavior:
 
-Implementation level: Level 0.
-Required tests/checks: docs/ADR consistency checks.
-Human verification: approve dependencies separately before installation.
+- Embed a renderer-backed viewport surface in the editor window.
+- Render the active scene camera, primitives, materials, and lights through the
+  engine rendering path.
+- Handle resize, scale factor, device loss, and renderer initialization failures
+  with diagnostics.
+- Provide a software or diagnostics fallback only when GPU initialization fails.
+- Keep renderer/editor ownership boundaries consistent with architecture docs and
+  ADRs.
 
-## M5: Internal API Contract Specs
+Acceptance:
 
-Goal: define internal contracts before agents implement runtime, editor, MCP, or
-template behavior that depends on them.
+- App-window smoke proves the GPU viewport is visible for at least one template.
+- Renderer diagnostics are covered by automated tests where practical.
+- `cargo doc --workspace --no-deps` runs if public renderer/editor APIs change.
 
-Key outputs:
+### E8: Viewport Navigation, Selection, and Gizmos
 
-- Specs for `Project`, `Scene`, `Reflection`, `DiagnosticsStore`, `Command` /
-  `ChangeRecord`, `RuntimeWorld`, `FrameScheduler`, `ResourceDatabase`,
-  `EditorSession`, and MCP internal command surfaces.
-- Each spec names owning crates, dependency boundaries, serialized-format
-  impact, diagnostics behavior, and public API constraints.
+Goal: the viewport becomes an editing surface, not just a render target.
 
-Representative issues: project/editor session spec; scene/reflection spec;
-diagnostics spec; command/change-record spec; runtime/frame spec; resource
-database spec; MCP command surface spec.
+Required behavior:
 
-Implementation level: Level 0.
-Required tests/checks: docs/ADR consistency checks.
-Human verification: confirm specs are sufficient to prevent invented APIs.
+- Navigate the editor camera with documented mouse/keyboard controls.
+- Select objects in the viewport.
+- Highlight selected objects.
+- Show transform gizmos for translate at minimum; rotate/scale can be separate
+  follow-ups if scoped.
+- Frame/focus selected objects.
+- Keep picking and gizmo math deterministic and testable outside the window loop.
 
-## M6: Project Model and Diagnostics Store
+Acceptance:
 
-Goal: create the engine-owned project/document health layer shared by
-serialization, editor, MCP, and tests.
+- Unit tests cover picking/gizmo math.
+- Manual smoke proves viewport select, focus, and transform edit works in Studio.
 
-Key outputs:
+### E9: Asset Browser and Import Workflow
 
-- Project identity/settings model for `Kinetik.toml`.
-- Project layout validation wired to structured diagnostics.
-- Active scene/document references without editor-only state.
-- Diagnostics store for current health, filtering, blocking scopes, and
-  repairability.
+Goal: users can bring basic content into a project and inspect asset health.
 
-Representative issues: project model scaffold; project diagnostics store;
-layout validation diagnostics; project fixture helpers.
+Required behavior:
 
-Implementation level: Level 2.
-Required tests/checks: Level 2 checks, layout/diagnostic unit tests, golden
-fixtures once serialization is active.
-Human verification: confirm no dependency on editor crates or UI state.
+- Show project assets in a browser panel.
+- Import or register supported baseline assets: textures, materials, and simple
+  mesh/scene assets covered by existing accepted architecture.
+- Report missing, stale, invalid, and unsupported assets.
+- Let users assign supported assets to scene objects through the inspector.
+- Keep import metadata deterministic and source-control friendly.
 
-## M7: Engine Class and Spatial Model
+Acceptance:
 
-Goal: deepen the instance model enough for real 3D authoring without coupling it
-to rendering, physics, or editor UI.
+- Fixture tests cover asset registration and diagnostics.
+- Manual smoke proves an asset can be imported or assigned through Studio.
 
-Key outputs:
+### E10: Template Projects Work End-to-End
 
-- Built-in class descriptors beyond root services.
-- Class capability metadata or inheritance/composition policy.
-- Local transform property contract and world-transform derivation.
-- Deterministic traversal, transform dirty/update behavior, and bounds contract.
+Goal: first-party templates are usable projects in the UI.
 
-Representative issues: built-in 3D class descriptor set; transform contract;
-world transform derivation; spatial bounds contract.
+Required behavior:
 
-Implementation level: Level 2.
-Required tests/checks: Level 2 checks, traversal/transform determinism tests,
-invalid class/property diagnostics.
-Human verification: confirm class names and property paths match reflection and
-Luau direction.
+- `primitive-showcase`, `pbr-material-demo`, and `basic-fps` open from the
+  launcher, show in the viewport, populate explorer/inspector, support at least
+  one meaningful edit, save/reload, and play when the template has runtime
+  behavior.
+- Template manifests describe editor-facing expectations.
+- Failures include actionable diagnostics.
 
-## M8: Runtime World and Frame Kernel
+Acceptance:
 
-Goal: establish runtime world identity and deterministic frame stepping before
-script, physics, render, play mode, or MCP runtime inspection depend on it.
+- Automated template smoke covers open/edit/save/reload and supported play paths.
+- Manual or screenshot evidence proves the templates work in the app window.
 
-Key outputs:
+### E11: Script Authoring Baseline
 
-- Runtime world derived from edit scene/document state.
-- Runtime IDs distinct from edit IDs, with GUID mapping where appropriate.
-- Runtime-only spawn/despawn policy.
-- Variable update, fixed-step accumulator, safe structural-change sync points,
-  and coherent snapshot boundary.
+Goal: scripting is visible and debuggable in Studio without hard-coding the
+engine forever to one language.
 
-Representative issues: runtime world clone; runtime identity mapping; frame step
-skeleton; fixed-step scheduler; runtime diagnostics/log attribution.
+Required behavior:
 
-Implementation level: Level 3.
-Required tests/checks: Level 3 checks, edit-to-runtime cloning tests,
-deterministic frame/fixed-step ordering tests.
-Human verification: confirm ADR 0019 edit/play boundaries are preserved.
+- Attach, detach, and inspect existing Lua/Luau script assets through the UI.
+- Show script lifecycle and diagnostics in Studio.
+- Keep generic editor-facing names such as script runtime, script asset, and
+  script diagnostics where APIs are language-neutral.
+- File scoped follow-ups for `.kn` recognition, syntax support, diagnostics,
+  lifecycle callbacks, async/task behavior, HTTP permissions, and hot reload once
+  `kinetik-lang` integration is ready.
 
-## M9: Signal and Event Delivery
+Acceptance:
 
-Goal: provide deterministic signal/event behavior for scripts, physics, runtime
-systems, diagnostics, and MCP inspection.
+- Existing Lua/Luau behavior remains intact.
+- Script UI tests or manual smoke cover attach/detach and diagnostics.
+- No accepted scripting ADR is redirected without a new approval path.
 
-Key outputs:
+### E12: Build, Run, and Export Prototype
 
-- Signal descriptors and stable author-facing names.
-- Connection/disconnection lifecycle.
-- Deterministic event queues and delivery order.
-- Frame-level/fixed-step flush points and cleanup on instance/world teardown.
+Goal: a simple project can leave the editor through a documented path.
 
-Representative issues: signal connection handles; deterministic delivery queue;
-flush integration; cleanup and diagnostics; signal bus internal API contract.
+Required behavior:
 
-Implementation level: Level 2.
-Required tests/checks: Level 2 checks, delivery-order determinism tests,
-lifecycle cleanup tests.
-Human verification: confirm Luau-friendly events can be supported safely.
+- Provide a UI command to validate and build or export the active project through
+  the current bundle/runtime plan.
+- Produce deterministic output with manifest diagnostics.
+- Launch or run the exported output when supported by the platform.
+- Report missing assets, scripts, or runtime requirements before export.
 
-## M10: Command and Semantic Change Core
+Acceptance:
 
-Goal: implement the shared mutation surface for editor UI, MCP, dirty-state
-tracking, undo/redo, serialization, diagnostics, and tests.
+- Fixture tests cover deterministic output for a minimal project.
+- Manual smoke proves the UI command runs and reports success/failure clearly.
 
-Key outputs:
+### E13: Editor Reliability Pass
 
-- Command input/result model with validation before mutation.
-- Structured semantic change records.
-- Undo/redo record shape and grouping.
-- Dirty-state explanation from saved snapshots and change records.
-- Initial scene and project command families.
+Goal: make the editor feel like software someone can keep open.
 
-Representative issues: command result model; semantic change records; undo/redo
-core; dirty-state explanation; scene/project command families.
+Required behavior:
 
-Implementation level: Level 3.
-Required tests/checks: Level 3 checks, validation diagnostics, undo/redo and
-dirty-state integration tests.
-Human verification: confirm command records express editor and MCP needs before
-UI handlers are built.
+- Persist layout and recent-project state.
+- Add stable keyboard shortcuts and menu affordances for core actions.
+- Add diagnostics/log filtering.
+- Add screenshot or visual smoke coverage for the main editor states.
+- Profile obvious UI stalls and eliminate avoidable busy loops.
+- Audit oversized/mixed-responsibility editor files and file follow-ups or split
+  them when the work belongs to the active slice.
 
-## M11: Resource Database and Asset Validation
+Acceptance:
 
-Goal: move from manifest identity to an engine-owned resource database that can
-validate references and report asset health.
+- Main editor states have reproducible smoke coverage.
+- Known reliability issues have scoped issues with acceptance criteria.
 
-Key outputs:
+## Subsystem Roadmap After The Usable Editor Spine
 
-- Resource database over committed manifests.
-- GUID and `res://` lookup APIs.
-- Missing/moved/duplicate asset diagnostics.
-- Resource reference validation from scene/property values.
-- Import cache state model and asset dependency lookup contract.
-- Asset dependency lookup direction, ordering, and diagnostics contract.
+The following feature families are deferred until the editor spine above is
+usable, unless a narrow issue is required as a dependency for an earlier editor
+milestone.
 
-Representative issues: resource database scaffold; reference validation;
-reflected asset-reference value shape; scene/property reference validation;
-missing/duplicate diagnostics; import cache state; dependency lookup.
+### Audio
 
-Implementation level: Level 2.
-Required tests/checks: Level 2 checks, lookup/validation/diagnostics tests,
-golden manifest fixtures once serialization is active.
-Human verification: confirm importer types do not leak into public resource APIs.
+Target capabilities:
 
-## M12: Script Runtime Contract Slice
+- Audio asset records, import metadata, missing-file diagnostics, and project
+  validation.
+- Scene components for audio emitters/listeners.
+- Runtime audio service with deterministic lifecycle and editor-safe preview.
+- UI controls for assigning clips and previewing basic playback.
 
-Goal: prove script lifecycle and safe handles at the engine-contract level
-before committing to a concrete Luau bridge.
+Gate: requires an ADR or accepted internal spec for backend choice, threading,
+streaming, asset formats, and editor/runtime ownership.
 
-Key outputs:
+### Animation
 
-- Script asset/reference and attachment contracts.
-- Lifecycle scheduling for `Ready`, `Update`, `PhysicsUpdate`, and `Exit`.
-- Safe instance/resource handle boundaries.
-- Script diagnostics and queued structural changes from scripts.
-- Language-neutral contracts in `kinetik-script` that can host the Luau bridge
-  now and future script backends later without leaking VM internals.
+Target capabilities:
 
-Representative issues: script attachment contract; lifecycle dispatch contract;
-safe script handle API; script diagnostics; structural-change queue integration.
+- Animation clip assets and skeleton/skin metadata where supported.
+- Animator component and state/montage model.
+- Runtime evaluation tied to frame phases.
+- Editor timeline or minimal animation preview once viewport selection works.
 
-Implementation level: Level 3.
-Required tests/checks: Level 3 checks, fake-runtime lifecycle ordering tests,
-missing-script and invalid-handle diagnostics.
-Human verification: confirm the contract supports Luau without VM internals
-leaking and does not unnecessarily prevent future `.kn` script coexistence.
+Gate: requires accepted data model and importer scope before adding broad
+animation APIs.
 
-## M13: Editor Command Surface
+### Runtime UI
 
-Goal: expose project and scene mutation through validated editor commands before
-visible editor UI and MCP mutating tools rely on them.
+Target capabilities:
 
-Key outputs:
+- Runtime UI document/assets, layout model, styling subset, and input routing.
+- Editor preview and diagnostics for invalid UI documents.
+- Bridge between runtime UI and script callbacks without locking to one language.
 
-- Create/delete/rename/reparent/duplicate instance commands.
-- Set reflected property command.
-- Attach/detach script command.
-- Asset command shape where resource APIs exist.
-- Undo/redo groups, dirty-state explanations, and command diagnostics.
+Gate: requires a UI architecture decision before serialized formats are added.
 
-Representative issues: instance mutation commands; property command; script
-attachment command; asset command scaffold; undo/redo grouping.
+### Prefabs and Packages
 
-Implementation level: Level 3.
-Required tests/checks: Level 3 checks, command integration tests, dirty-state
-and undo/redo tests.
-Human verification: confirm commands are stable automation surfaces.
+Target capabilities:
 
-## M14: MCP Read-Only Automation
+- Prefab asset format, instance overrides, nested prefab policy, and validation.
+- Package manifests for reusable content.
+- Editor create/apply/revert flows with clear ownership of overrides.
 
-Goal: let agents inspect project, scene, runtime, diagnostics, selection, and
-resource state through semantic tools.
+Gate: requires accepted serialization and override semantics.
 
-Key outputs:
+### Build, Export, and Bundles
 
-- Editor-owned MCP server scaffold.
-- Read-only project, scene, property, resource, diagnostics, and dirty-state
-  commands.
-- Fixture-backed test harness hooks.
+Target capabilities:
 
-Representative issues: MCP server dependency proposal; read-only command
-schema; diagnostics listing; scene/resource inspection; temp workspace support.
+- `.knbundle` or equivalent project output.
+- Platform runtime manifests and asset closure validation.
+- Incremental build cache if justified by measured project scale.
+- Editor export UI and command-line export parity.
 
-Implementation level: Level 4.
-Required tests/checks: Level 4 checks, schema tests, fixture-backed inspection
-tests.
-Human verification: confirm MCP reports the same state humans see.
+Gate: export format changes require explicit approval and migration policy.
 
-## M15: MCP Mutating Automation
+### Terrain and Worlds
 
-Goal: let agents safely edit through the same command path as the editor, with
-no second mutation path.
+Target capabilities:
 
-Key outputs:
+- Terrain asset records, height/paint data, streaming policy if needed.
+- Editor sculpt/paint tools only after viewport tools are reliable.
+- Runtime chunk/render integration and diagnostics.
 
-- Mutating scene/property/undo/redo MCP commands mapped to editor commands.
-- Dirty-state and diagnostics verification.
-- Explicit edit/play target-mode handling.
+Gate: requires an accepted world/terrain data model and performance budget.
 
-Representative issues: MCP create/delete/reparent/set-property commands; MCP
-undo/redo; command-to-change-record tests; edit/play ambiguity diagnostics.
+### Advanced Rendering
 
-Implementation level: Level 4.
-Required tests/checks: Level 4 checks, MCP/command parity tests, dirty-state and
-undo/redo tests through MCP.
-Human verification: confirm MCP cannot bypass validation or play boundaries.
+Target capabilities:
 
-## M16: First Editor Shell
+- Expanded material model, post-processing, shadow quality controls, and render
+  settings assets.
+- Shader authoring or shader graph only after renderer/editor boundaries are
+  stable.
+- Visual diagnostics for unsupported material/render paths.
 
-Goal: create the first visible Kinetik Studio loop without pretending the shell
-is already a complete editor.
+Gate: public renderer API or serialized material changes need accepted ADR/spec
+coverage.
 
-Key outputs:
+### Asset Pipeline Expansion
 
-- Window shell and basic app lifecycle.
-- Panel layout for Explorer, Inspector, Diagnostics, and Viewport placeholder.
-- Menu/toolbar placeholders for open/save/play actions.
-- Manual/screenshot smoke verification.
+Target capabilities:
 
-Representative issues: editor shell dependency proposal; window/app shell;
-panel layout scaffold; diagnostics panel placeholder; viewport placeholder.
+- Reimport tracking, dependency graph, thumbnails, cache invalidation, and
+  project health checks.
+- Importer-specific diagnostics and source-control-friendly metadata.
 
-Implementation level: Level 5.
-Required tests/checks: Level 5 checks, screenshot smoke, boundary checks.
-Human verification: confirm the shell is visually coherent enough to continue.
+Gate: no new importer family should be added without fixture coverage and clear
+  editor UX acceptance.
 
-## M17: Editor Document Session
+### Scripting Maturity
 
-Goal: give the editor real session state for active project, scene, selection,
-diagnostics, dirty state, and mode ownership.
+Target capabilities:
 
-Key outputs:
+- Hot reload, permission diagnostics, async/task behavior, HTTP permissions, and
+  editor debugger hooks for current Lua/Luau support.
+- Future `.kn` asset recognition, syntax support, diagnostics, lifecycle, and
+  runtime adapter once `kinetik-lang` is ready.
 
-- Active project and scene document state.
-- Selection model.
-- Dirty-state source wired to command/change records.
-- Diagnostics collection and panel data model.
-- Open/close project flow and edit/play mode ownership.
+Gate: multi-language scripting is additive. Do not replace or disrupt accepted
+  Lua/Luau architecture without human approval.
 
-Representative issues: editor session model; active project/scene state;
-selection model; diagnostics model; dirty-state integration.
+### Physics Maturity
 
-Implementation level: Level 4.
-Required tests/checks: Level 4 checks, selection/dirty-state tests, open/close
-project smoke.
-Human verification: confirm editor state is separate from runtime/source state.
+Target capabilities:
 
-## M18: Explorer Scene Editing
+- Collider/rigid-body editing, debug drawing, simulation controls, and runtime
+  determinism checks.
+- Physics fixture coverage for templates that rely on character motion.
 
-Goal: make the Explorer a real hierarchy surface backed by editor commands.
+Gate: dependency/backend changes require approval.
 
-Key outputs:
+### Networking
 
-- Display actual scene hierarchy.
-- Select, create, delete, rename, duplicate, and reparent through commands.
-- Show stable path/GUID information where useful.
-- Update dirty state and diagnostics, with undo/redo support.
+Target capabilities:
 
-Representative issues: hierarchy view; selection integration; create/delete/
-rename; reparent/duplicate; undo/redo smoke.
+- Project settings, runtime service boundaries, diagnostics, and local test
+  harnesses before gameplay-facing networking APIs.
 
-Implementation level: Level 5.
-Required tests/checks: Level 5 checks, command tests, screenshot/manual
-verification.
-Human verification: confirm hierarchy edits are understandable and scoped.
+Gate: requires explicit architecture approval before public APIs or serialized
+  protocols are added.
 
-## M19: Inspector Property Editing
+### 2D Workflow
 
-Goal: make the Inspector consume reflection metadata and edit properties through
-the same validation path as commands and MCP.
+Target capabilities:
 
-Key outputs:
+- Sprite/atlas assets, 2D camera presets, tilemaps if approved, and 2D template
+  projects.
 
-- Basic typed fields for common reflected value types.
-- Property edits routed through `SetProperty`.
-- Read-only and validation diagnostics displayed.
-- Undo/redo support and MCP property behavior parity.
+Gate: must reuse the editor spine instead of becoming a separate toy editor.
 
-Representative issues: descriptor rendering; typed fields; set-property
-integration; validation diagnostics; undo/redo smoke.
+## Issue Creation Order
 
-Implementation level: Level 5.
-Required tests/checks: Level 5 checks, property validation tests, screenshot/
-manual verification.
-Human verification: confirm the Inspector does not invent editor-only rules.
+For each milestone, prefer issues in this order:
 
-## M20: Project Save/Reload From Editor
+1. Small spec or ADR issue when architecture, public API, serialized format, or
+   dependency choice is not already approved.
+2. Deterministic model/command/data issue with automated tests.
+3. Editor UI integration issue with manual or screenshot acceptance.
+4. Template or fixture verification issue proving the workflow end to end.
+5. Reliability/code-health follow-up if the implementation exposes oversized
+   files, unclear ownership, hard-to-test helpers, excessive nesting, or
+   duplication outside the active slice.
 
-Goal: prove the editor can persist and reload project state deterministically.
-
-Key outputs:
-
-- Save and reload active project/scene/manifest state through approved
-  serialization boundaries.
-- Dirty state clears only when saved snapshots match.
-- GUIDs, hierarchy, properties, and manifest references are preserved.
-- Golden fixtures for editor save/reload.
-
-Representative issues: editor save command; reload command; dirty-state tests;
-golden fixtures; save/reload diagnostics.
-
-Implementation level: Level 4.
-Required tests/checks: Level 4 checks, golden fixture tests, editor save/reload
-smoke.
-Human verification: confirm saved files are deterministic and Git-reviewable.
-
-## M21: MCP Editor Parity Slice
-
-Goal: prove UI actions and agent actions observe and mutate the same editor
-state through the same command/change path.
-
-Key outputs:
-
-- MCP reports active project, scene, selection, diagnostics, and dirty state.
-- MCP mutating commands produce the same change records as UI commands.
-- UI updates after MCP changes.
-
-Representative issues: MCP active editor state; selection/focus commands;
-MCP/UI parity tests; diagnostics and dirty-state parity.
-
-Implementation level: Level 4.
-Required tests/checks: Level 4 checks, MCP-driven editor integration tests.
-Human verification: confirm agent automation creates explainable editor state.
-
-## M22: Play Mode Control Slice
-
-Goal: add editor play controls that exercise runtime sandboxing without leaking
-runtime changes into saved edit state.
-
-Key outputs:
-
-- Play, stop, and step controls.
-- Runtime world created from current edit scene.
-- Runtime IDs distinct from edit IDs; stop destroys play world.
-- Runtime diagnostics visible in editor/MCP.
-- Ambiguous edit/play commands fail with diagnostics.
-
-Representative issues: play/start/stop controls; runtime sandbox integration;
-runtime diagnostics panel integration; MCP play commands; boundary tests.
-
-Implementation level: Level 4.
-Required tests/checks: Level 4 checks, play lifecycle tests, MCP/headless smoke.
-Human verification: confirm play mode does not persist runtime-only mutations.
-
-## M23: Viewport Interaction Scaffold
-
-Goal: establish viewport interaction foundations before rendering and 3D
-authoring depend on them.
-
-Key outputs:
-
-- Viewport camera/navigation state.
-- Focus selected instance.
-- Basic selection highlight or overlay.
-- Placeholder picking/focus contract.
-- Screenshot smoke and path toward runtime renderer usage.
-
-Representative issues: viewport camera/navigation; focus selected; selection
-overlay; picking contract; screenshot smoke.
-
-Implementation level: Level 5.
-Required tests/checks: Level 5 checks, screenshot/manual verification.
-Human verification: confirm interactions can support 3D authoring.
-
-## M24: First 3D Scene Authoring Slice
-
-Goal: prove a complete 3D scene-data authoring loop before requiring final
-rendering quality.
-
-Key outputs:
-
-- Create/scaffold project, load scene, add 3D scene instances as data, set
-  transform/material-facing properties, save/reload, enter play mode, step, and
-  inspect diagnostics.
-- MCP or headless verification for the full loop.
-
-Representative issues: 3D hello scene data; scaffold/load/save test; first
-play-mode smoke; MCP-driven 3D authoring smoke.
-
-Implementation level: Level 4.
-Required tests/checks: Level 4 checks, golden project/scene fixture,
-MCP/headless smoke.
-Human verification: confirm the editor preserves 3D scene data coherently.
-
-## M25: First Rendered Primitive Scene
-
-Goal: render a primitive scene through the runtime/editor path while preserving
-the long-term renderer direction.
-
-Key outputs:
-
-- Camera and light instances.
-- Built-in primitive mesh resources.
-- Mesh/material extraction boundary.
-- PBR-compatible `StandardMaterial` scaffold and safe fallback materials.
-- Render diagnostics for missing cameras, meshes, materials, shaders, textures,
-  and lights.
-
-Representative issues: renderer dependency confirmation; primitive meshes;
-camera/light extraction; material scaffold; fallback diagnostics; viewport render.
-
-Implementation level: Level 4.
-Required tests/checks: Level 4 checks, primitive/material unit tests, extraction
-diagnostics, screenshot smoke.
-Human verification: confirm stable framing and useful render diagnostics.
-
-## M26: Template Project Contract
-
-Goal: define how first-party templates live in the repository before template
-content becomes executable acceptance targets.
-
-Key outputs:
-
-- Decision on `templates/` versus `examples/`.
-- Template README/verification-note format.
-- Screenshot/golden policy, fixture determinism rules, and CI/headless/human
-  verification expectations.
-
-Representative issues: template directory contract; verification note format;
-screenshot/golden policy; CI fixture policy.
-
-Implementation level: Level 0.
-Required tests/checks: docs/ADR consistency checks.
-Human verification: approve template location before content work starts.
-
-## M27: Primitive Showcase Template
-
-Goal: ship the first Kinetik template proving basic 3D authoring, hierarchy,
-transforms, materials, viewport inspection, and play-mode smoke work together.
-
-Key outputs:
-
-- Approved-location primitive showcase project.
-- Curated primitive scene with clear hierarchy, transforms, materials, camera,
-  lighting, save/reload fixture, screenshots, and verification notes.
-
-Representative issues: primitive scene fixture; transform/material editing
-smoke; save/reload golden; editor screenshot verification.
-
-Implementation level: Level 5.
-Required tests/checks: Level 5 checks, golden fixture, MCP/headless smoke.
-Human verification: confirm visual legibility and no play-state persistence.
-
-## M28: Asset Import and Material Foundation
-
-Goal: build import/material foundation before a PBR demo claims real asset
-workflow coverage.
-
-Key outputs:
-
-- Texture import/reimport/cache smoke.
-- glTF/GLB mesh import smoke once approved.
-- Material asset/reference validation.
-- Import settings/cache artifact records and diagnostics.
-
-Representative issues: import dependency installation after approval; texture
-import; glTF/GLB import; material reference validation; import diagnostics.
-
-Implementation level: Level 4.
-Required tests/checks: Level 4 checks, import fixtures, manifest/cache metadata
-tests, diagnostics tests.
-Human verification: confirm assets remain deterministic and reviewable.
-
-## M29: PBR Material Demo Scene
-
-Goal: demonstrate Kinetik's practical PBR direction with a compact material,
-lighting, texture, import, and render-diagnostic scene.
-
-Key outputs:
-
-- Approved-location PBR material demo project.
-- Metallic/roughness range, normal/emissive examples when supported, directional
-  and local lighting, imported mesh/texture path, diagnostics, and screenshots.
-
-Representative issues: PBR material range fixture; texture/material import
-smoke; light setup; imported mesh render smoke; screenshot verification.
-
-Implementation level: Level 5.
-Required tests/checks: Level 5 checks, material validation, golden/reference
-tests, screenshot smoke.
-Human verification: confirm the scene does not overpromise unsupported renderer
-features.
-
-## M30: Input, Physics, and Interaction Foundation
-
-Goal: establish gameplay foundations before the FPS prototype becomes a
-template instead of a hardcoded demo.
-
-Key outputs:
-
-- Input mapping and event model.
-- Mouse capture/look policy.
-- Static collision against primitive level geometry.
-- Character controller slice.
-- Raycast or proximity interaction primitive.
-
-Representative issues: input dependency/API proposal; input mapping; mouse
-capture/look; static collision; character controller; interaction primitive.
-
-Implementation level: Level 4.
-Required tests/checks: Level 4 checks, controller math tests where practical,
-collision/interaction integration tests.
-Human verification: confirm movement/input policy before templates depend on it.
-
-## M31: Basic FPS Prototype
-
-Goal: prove Kinetik can author and run a minimal playable 3D game loop, not just
-render static scenes.
-
-Key outputs:
-
-- Approved-location basic FPS project.
-- First-person camera/controller, static collision, simple interaction, minimal
-  start/move/look/interact/complete/restart loop, diagnostics, and playtest
-  checklist.
-
-Representative issues: FPS task contract/control scheme; controller slice;
-collision smoke; interaction objective; play-mode diagnostics and restart smoke.
-
-Implementation level: Level 5.
-Required tests/checks: Level 5 checks, controller tests where practical,
-headless lifecycle/objective tests, MCP play smoke.
-Human verification: confirm movement, mouse look, interaction, and restart feel
-acceptable for a prototype.
-
-## M32: Post-Template Feature Roadmap
-
-Goal: keep a record of major engine/editor capabilities that remain planned
-after the first 3D template set, without pulling them into the primitive, PBR,
-or basic FPS acceptance scope.
-
-Key outputs:
-
-- Deferred feature backlog grouped by subsystem.
-- Dependency/API/spec gates identified before each feature family starts.
-- Clear distinction between first-template requirements and later engine
-  maturity work.
-
-Detailed backlog: `docs/backlog/post-template-roadmap.md`.
-
-Deferred feature areas:
-
-- Audio: buses, playback, spatial audio, editor preview, and mixing workflows.
-- Animation: clips, skeletal import, animation state, retargeting direction, and
-  editor preview.
-- Runtime UI: UI scene instances, layout, input focus, styling, and menu/HUD
-  workflows.
-- Prefabs and packages: clone-ready templates, override records, package
-  dependencies, and broken-override diagnostics.
-- Build/export/bundles: `.knbundle` build/load/verify, platform export,
-  signing/hash verification, and runtime content mounting.
-- Terrain and world environment: terrain chunks, brushes, sky/atmosphere,
-  time-of-day, weather direction, and large-world constraints.
-- Advanced rendering: shadows, HDR/tone mapping, environment lighting, IBL,
-  render graph, material graph, shader graph authoring, and Forward+ direction.
-- Asset pipeline expansion: richer model/material import, texture compression,
-  reimport policies, repair tools, and asset dependency visualization.
-- Editor polish: docking/layout persistence, keyboard shortcuts, accessibility,
-  profiling panels, visual regression harness, and richer viewport gizmos.
-- Scripting maturity: Luau type generation, debugger hooks, hot reload policy,
-  API documentation, and sandbox permissions.
-- Physics maturity: joints, triggers/areas, character-controller refinement,
-  collision layers UI, events, debug drawing, and editor quick fixes.
-- Networking/multiplayer: explicitly post-first-template until local runtime,
-  scripting, diagnostics, and editor workflows are proven.
-- 2D support: explicitly post-first-template while Kinetik remains optimized for
-  the first 3D milestones.
-
-Representative issues:
-
-- Future audio foundation roadmap.
-- Future animation foundation roadmap.
-- Future runtime UI roadmap.
-- Future prefab/package implementation roadmap.
-- Future build/export/bundle roadmap.
-- Future terrain/world roadmap.
-- Future advanced renderer roadmap.
-- Future editor polish roadmap.
-
-Implementation level: Level 0.
-Required tests/checks: docs/ADR consistency checks.
-Human verification: confirm each deferred feature family gets dependency review
-and internal API specs before implementation issues are opened.
+Do not create broad "implement subsystem" issues. Every issue should name the
+files or crates it is likely to touch, the user-visible behavior it unlocks, the
+required checks, and what will still be out of scope.
