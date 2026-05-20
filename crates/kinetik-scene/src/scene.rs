@@ -371,7 +371,7 @@ impl Scene {
         id
     }
 
-    fn next_instance_guid(&mut self) -> InstanceGuid {
+    pub(crate) fn next_instance_guid(&mut self) -> InstanceGuid {
         let guid = InstanceGuid::new(self.next_guid);
         self.next_guid += 1;
         guid

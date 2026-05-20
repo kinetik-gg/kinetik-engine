@@ -56,6 +56,11 @@ pub enum SceneError {
         /// Root instance ID.
         root_id: InstanceId,
     },
+    /// Root instance cannot be duplicated through structural mutation.
+    CannotDuplicateRoot {
+        /// Root instance ID.
+        root_id: InstanceId,
+    },
     /// Reparenting would create a hierarchy cycle.
     ReparentCycle {
         /// Instance being reparented.
@@ -142,6 +147,9 @@ impl fmt::Display for SceneError {
             }
             Self::CannotReparentRoot { root_id } => {
                 write!(f, "scene root cannot be reparented: {root_id}")
+            }
+            Self::CannotDuplicateRoot { root_id } => {
+                write!(f, "scene root cannot be duplicated: {root_id}")
             }
             Self::ReparentCycle { id, new_parent } => write!(
                 f,
