@@ -19,6 +19,7 @@ use kinetik_resource::AssetManifest;
 use kinetik_scene::Scene;
 
 use crate::{EditorDocumentSelection, EditorPanel, EditorSession};
+use crate::{ViewportPickRequest, ViewportPickResponse, ViewportSnapshot};
 use mutating::execute_scene_command;
 
 /// Editor-owned read-only MCP command names.
@@ -164,7 +165,7 @@ pub enum McpSelectionResponse {
 }
 
 /// Editor session snapshot exposed to agent-facing MCP helpers.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct McpEditorSnapshot {
     /// Active project status, when a project is open.
     pub project: Option<ProjectStatusResponse>,
@@ -182,6 +183,26 @@ pub struct McpEditorSnapshot {
     pub dirty_state: DirtyStateResponse,
     /// Current play-mode runtime state.
     pub play_state: McpPlayStateResponse,
+    /// Renderer-independent viewport interaction state.
+    pub viewport: ViewportSnapshot,
+}
+
+/// MCP/headless viewport focus response.
+#[derive(Debug, Clone, PartialEq)]
+pub struct McpViewportFocusResponse {
+    /// Viewport snapshot after the focus command.
+    pub viewport: ViewportSnapshot,
+    /// Validation diagnostics, when focus failed.
+    pub diagnostics: Vec<DiagnosticSummary>,
+}
+
+/// MCP/headless viewport picking response.
+#[derive(Debug, Clone, PartialEq)]
+pub struct McpViewportPickResponse {
+    /// Placeholder picking response.
+    pub pick: ViewportPickResponse,
+    /// Viewport snapshot at pick time.
+    pub viewport: ViewportSnapshot,
 }
 
 /// Selection and focus requests that MCP can apply to the editor session.
@@ -364,6 +385,34 @@ impl EditorSession {
             diagnostics,
             dirty_state: dirty_state_response(&self.dirty_state()),
             play_state: self.mcp_play_state(),
+            viewport: self.viewport_snapshot(),
+        }
+    }
+
+    /// Focuses the viewport on the current scene selection.
+    pub fn mcp_viewport_focus_selected(&mut self) -> McpViewportFocusResponse {
+        let diagnostics = self
+            .viewport_focus_selected()
+            .err()
+            .map(|error| {
+                vec![
+                    mcp_validation_error("viewport.focus_selected", error.to_string())
+                        .to_diagnostic(),
+                ]
+            })
+            .unwrap_or_default();
+        McpViewportFocusResponse {
+            viewport: self.viewport_snapshot(),
+            diagnostics: diagnostics_list_response(&diagnostics),
+        }
+    }
+
+    /// Applies the current viewport picking contract.
+    #[must_use]
+    pub fn mcp_viewport_pick(&self, request: ViewportPickRequest) -> McpViewportPickResponse {
+        McpViewportPickResponse {
+            pick: self.viewport_pick(request),
+            viewport: self.viewport_snapshot(),
         }
     }
 
