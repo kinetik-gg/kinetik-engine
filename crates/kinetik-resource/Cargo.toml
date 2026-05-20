@@ -14,3 +14,5 @@ workspace = true
 kinetik-core = { path = "../kinetik-core" }
 kinetik-reflect = { path = "../kinetik-reflect" }
 kinetik-scene = { path = "../kinetik-scene" }
+serde = { version = "1.0.228", features = ["derive"] }
+toml = "1.1.2"

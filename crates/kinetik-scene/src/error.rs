@@ -114,6 +114,11 @@ pub enum SceneError {
         /// Registered instance class name.
         class_name: String,
     },
+    /// Scene document could not be parsed or written.
+    Serialization {
+        /// Human-readable serialization failure.
+        reason: String,
+    },
 }
 
 impl fmt::Display for SceneError {
@@ -195,6 +200,7 @@ impl fmt::Display for SceneError {
                     "instance {id} of class {class_name} does not have bounds"
                 )
             }
+            Self::Serialization { reason } => write!(f, "scene serialization failed: {reason}"),
         }
     }
 }

@@ -11,6 +11,7 @@ use kinetik_core::{
     Diagnostic, DiagnosticBlockingScope, DiagnosticSeverity, InstanceGuid, InstanceId,
 };
 use kinetik_project::ProjectModel;
+use kinetik_resource::AssetManifest;
 use kinetik_scene::{Scene, SceneResult};
 
 use crate::{EditorPanel, ExplorerSnapshot};
@@ -263,6 +264,7 @@ impl DiagnosticsPanelState {
 pub struct EditorSession {
     pub(crate) project: Option<ProjectModel>,
     pub(crate) active_scene: Option<Scene>,
+    pub(crate) asset_manifest: AssetManifest,
     pub(crate) selection: EditorSelection,
     pub(crate) command_history: CommandHistory,
     pub(crate) session_diagnostics: Vec<Diagnostic>,
@@ -307,8 +309,19 @@ impl EditorSession {
 
     /// Opens project and scene document state into the editor session.
     pub fn open_project(&mut self, project: ProjectModel, active_scene: Scene) {
+        self.open_project_with_assets(project, active_scene, AssetManifest::new());
+    }
+
+    /// Opens project, scene, and asset manifest document state into the editor session.
+    pub fn open_project_with_assets(
+        &mut self,
+        project: ProjectModel,
+        active_scene: Scene,
+        asset_manifest: AssetManifest,
+    ) {
         self.project = Some(project);
         self.active_scene = Some(active_scene);
+        self.asset_manifest = asset_manifest;
         self.selection.clear();
         self.command_history = CommandHistory::new();
         self.session_diagnostics.clear();
@@ -319,6 +332,7 @@ impl EditorSession {
     pub fn close_project(&mut self) {
         self.project = None;
         self.active_scene = None;
+        self.asset_manifest = AssetManifest::new();
         self.selection.clear();
         self.command_history = CommandHistory::new();
         self.session_diagnostics.clear();
@@ -349,6 +363,12 @@ impl EditorSession {
     #[must_use]
     pub const fn active_scene(&self) -> Option<&Scene> {
         self.active_scene.as_ref()
+    }
+
+    /// Returns the active project asset manifest.
+    #[must_use]
+    pub const fn asset_manifest(&self) -> &AssetManifest {
+        &self.asset_manifest
     }
 
     /// Returns mutable active scene state for command execution.

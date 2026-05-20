@@ -77,6 +77,11 @@ pub enum ResourceError {
         /// Missing workspace-relative paths.
         paths: Vec<String>,
     },
+    /// Resource document could not be parsed or written.
+    Serialization {
+        /// Human-readable serialization failure.
+        reason: String,
+    },
 }
 
 impl ResourceError {
@@ -116,6 +121,9 @@ impl ResourceError {
     pub const MISSING_PROJECT_PATHS_CODE: DiagnosticCode =
         DiagnosticCode::new("KT_RESOURCE_MISSING_PROJECT_PATHS");
 
+    /// Stable diagnostic code for resource serialization failures.
+    pub const SERIALIZATION_CODE: DiagnosticCode = DiagnosticCode::new("KT_RESOURCE_SERIALIZATION");
+
     /// Diagnostic source for resource-owned validation.
     pub const RESOURCE_SOURCE: DiagnosticSource = DiagnosticSource::new("Resource");
 
@@ -134,6 +142,7 @@ impl ResourceError {
             Self::MissingAssetReference { .. } => Self::MISSING_ASSET_REFERENCE_CODE,
             Self::AssetReferencePathMismatch { .. } => Self::ASSET_REFERENCE_PATH_MISMATCH_CODE,
             Self::MissingProjectPaths { .. } => Self::MISSING_PROJECT_PATHS_CODE,
+            Self::Serialization { .. } => Self::SERIALIZATION_CODE,
         }
     }
 
@@ -155,6 +164,7 @@ impl ResourceError {
         }
         let blocking = match self {
             Self::MissingProjectPaths { .. } => DiagnosticBlockingScope::Build,
+            Self::Serialization { .. } => DiagnosticBlockingScope::Save,
             Self::MissingAssetReference { .. } | Self::AssetReferencePathMismatch { .. } => {
                 DiagnosticBlockingScope::Save
             }
@@ -216,6 +226,9 @@ impl fmt::Display for ResourceError {
                     f.write_str(path)?;
                 }
                 Ok(())
+            }
+            Self::Serialization { reason } => {
+                write!(f, "resource serialization failed: {reason}")
             }
         }
     }
