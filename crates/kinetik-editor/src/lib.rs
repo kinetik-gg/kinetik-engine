@@ -5,6 +5,8 @@ mod inspector;
 mod mcp;
 mod persistence;
 mod play;
+mod presentation;
+mod presentation_font;
 mod session;
 mod shell;
 mod viewport;

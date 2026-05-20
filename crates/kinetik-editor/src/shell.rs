@@ -1,13 +1,17 @@
 //! Kinetik Studio shell and first-window layout scaffold.
 
-use std::fmt;
+use std::{fmt, num::NonZeroU32, rc::Rc};
 
 use winit::{
     application::ApplicationHandler,
     dpi::LogicalSize,
     event::WindowEvent,
-    event_loop::{ActiveEventLoop, EventLoop},
+    event_loop::{ActiveEventLoop, EventLoop, OwnedDisplayHandle},
     window::{Window, WindowAttributes},
+};
+
+use crate::presentation::{
+    default_template_presentation, render_studio_presentation, TemplatePresentation,
 };
 
 const DEFAULT_WINDOW_TITLE: &str = "Kinetik Studio";
@@ -228,8 +232,9 @@ impl std::error::Error for EditorShellError {}
 
 /// Runs the first Kinetik Studio shell window.
 ///
-/// The window currently hosts editor-owned lifecycle and layout state. Real UI
-/// drawing, command wiring, and viewport rendering are later roadmap slices.
+/// The window hosts editor-owned lifecycle and layout state plus a staged
+/// software-presented template viewport. Full GPU viewport rendering, command
+/// wiring, and renderer-backed picking are later roadmap slices.
 ///
 /// # Errors
 ///
@@ -237,7 +242,13 @@ impl std::error::Error for EditorShellError {}
 /// event loop exits with a platform windowing error.
 pub fn run_editor_shell() -> Result<(), EditorShellError> {
     let event_loop = EventLoop::new().map_err(EditorShellError::from_error)?;
-    let mut app = WinitEditorShell::new(EditorShellState::new());
+    let context = softbuffer::Context::new(event_loop.owned_display_handle())
+        .map_err(EditorShellError::from_error)?;
+    let presentation = default_template_presentation().unwrap_or_else(|error| {
+        eprintln!("failed to load template presentation: {error}");
+        TemplatePresentation::new(Vec::new())
+    });
+    let mut app = WinitEditorShell::new(EditorShellState::new(), context, presentation);
     event_loop
         .run_app(&mut app)
         .map_err(EditorShellError::from_error)?;
@@ -251,15 +262,25 @@ pub fn run_editor_shell() -> Result<(), EditorShellError> {
 
 struct WinitEditorShell {
     state: EditorShellState,
-    window: Option<Window>,
+    context: softbuffer::Context<OwnedDisplayHandle>,
+    presentation: TemplatePresentation,
+    window: Option<Rc<Window>>,
+    surface: Option<softbuffer::Surface<OwnedDisplayHandle, Rc<Window>>>,
     launch_error: Option<EditorShellError>,
 }
 
 impl WinitEditorShell {
-    fn new(state: EditorShellState) -> Self {
+    fn new(
+        state: EditorShellState,
+        context: softbuffer::Context<OwnedDisplayHandle>,
+        presentation: TemplatePresentation,
+    ) -> Self {
         Self {
             state,
+            context,
+            presentation,
             window: None,
+            surface: None,
             launch_error: None,
         }
     }
@@ -280,8 +301,18 @@ impl ApplicationHandler for WinitEditorShell {
 
         match event_loop.create_window(self.window_attributes()) {
             Ok(window) => {
+                let window = Rc::new(window);
+                let surface = match softbuffer::Surface::new(&self.context, window.clone()) {
+                    Ok(surface) => surface,
+                    Err(error) => {
+                        self.launch_error = Some(EditorShellError::from_error(error));
+                        event_loop.exit();
+                        return;
+                    }
+                };
                 self.state.mark_running();
                 self.window = Some(window);
+                self.surface = Some(surface);
             }
             Err(error) => {
                 self.launch_error = Some(EditorShellError::from_error(error));
@@ -296,8 +327,15 @@ impl ApplicationHandler for WinitEditorShell {
         _window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
-        if let WindowEvent::CloseRequested = event {
-            event_loop.exit();
+        match event {
+            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::RedrawRequested => {
+                if let Err(error) = self.render_window() {
+                    self.launch_error = Some(error);
+                    event_loop.exit();
+                }
+            }
+            _ => {}
         }
     }
 
@@ -305,6 +343,33 @@ impl ApplicationHandler for WinitEditorShell {
         if let Some(window) = self.window.as_ref() {
             window.request_redraw();
         }
+    }
+}
+
+impl WinitEditorShell {
+    fn render_window(&mut self) -> Result<(), EditorShellError> {
+        let window = self
+            .window
+            .as_ref()
+            .ok_or_else(|| EditorShellError::from_error("window is not initialized"))?;
+        let surface = self
+            .surface
+            .as_mut()
+            .ok_or_else(|| EditorShellError::from_error("window surface is not initialized"))?;
+        let size = window.inner_size();
+        let width = size.width.max(1);
+        let height = size.height.max(1);
+        surface
+            .resize(
+                NonZeroU32::new(width).expect("width is clamped to non-zero"),
+                NonZeroU32::new(height).expect("height is clamped to non-zero"),
+            )
+            .map_err(EditorShellError::from_error)?;
+
+        let frame = render_studio_presentation(&self.presentation, width, height);
+        let mut buffer = surface.buffer_mut().map_err(EditorShellError::from_error)?;
+        buffer.copy_from_slice(&frame.pixels);
+        buffer.present().map_err(EditorShellError::from_error)
     }
 }
 
