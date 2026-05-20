@@ -16,10 +16,11 @@ kinetik-app = { path = "../kinetik-app" }
 kinetik-command = { path = "../kinetik-command" }
 kinetik-project = { path = "../kinetik-project" }
 kinetik-reflect = { path = "../kinetik-reflect" }
+kinetik-render = { path = "../kinetik-render" }
 kinetik-resource = { path = "../kinetik-resource" }
 kinetik-scene = { path = "../kinetik-scene" }
+softbuffer = "0.4.8"
 winit = "0.30.13"
 
 [dev-dependencies]
 kinetik-physics = { path = "../kinetik-physics" }
-kinetik-render = { path = "../kinetik-render" }
