@@ -40,6 +40,51 @@ loading generated outputs or invoking importers. Cache records are ordered
 deterministically by asset GUID and remain separate from committed manifest
 identity: a cache record does not create, repair, or replace a manifest entry.
 
+## Asset Dependency Lookup Contract
+
+Asset dependency lookup is a database view over Kinetik-owned import artifact
+metadata. It must not expose parser/importer structs, file-watcher events, or
+generated cache file paths as public engine data.
+
+Future import artifacts should report dependency edges as durable asset
+references:
+
+- Dependent asset GUID.
+- Dependency asset GUID.
+- Dependency `res://` path retained for readability and repair.
+- Optional dependency role, such as material texture, mesh material, prefab child
+  asset, script module, or bundle include.
+- Optional source range or importer-owned context when it can be reported through
+  Kinetik diagnostics without exposing parser types.
+
+`ResourceDatabase` should support both lookup directions:
+
+- Dependencies of an asset: all assets directly required by a given asset GUID.
+- Dependents of an asset: all assets that directly require a given asset GUID.
+
+Iteration order is deterministic:
+
+1. Dependent asset GUID ascending.
+2. Dependency asset GUID ascending.
+3. Dependency `res://` path ascending.
+4. Dependency role text ascending when present.
+
+Dependency lookup is read-only. It does not import assets, load generated cache
+outputs, rewrite manifests, or repair stale references. Missing dependency
+targets, GUID/path mismatches, and stale dependency metadata produce structured
+diagnostics with the dependent asset GUID/path and dependency GUID/path when
+available.
+
+Implementation acceptance criteria:
+
+- Add Kinetik-owned dependency edge metadata instead of parser/importer types.
+- Provide deterministic dependencies-of and dependents-of lookup APIs.
+- Preserve the separation between committed manifest identity, import cache
+  metadata, and generated outputs.
+- Emit diagnostics for missing or stale dependency targets without assigning
+  replacement GUIDs.
+- Add focused tests for ordering, both lookup directions, and diagnostics.
+
 ## Resource Reference Mapping
 
 Scene and property asset references use the mapping defined in

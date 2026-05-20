@@ -272,6 +272,7 @@ Key outputs:
 - Missing/moved/duplicate asset diagnostics.
 - Resource reference validation from scene/property values.
 - Import cache state model and asset dependency lookup contract.
+- Asset dependency lookup direction, ordering, and diagnostics contract.
 
 Representative issues: resource database scaffold; reference validation;
 reflected asset-reference value shape; scene/property reference validation;
