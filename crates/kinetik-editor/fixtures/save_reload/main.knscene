@@ -20,6 +20,14 @@
                         class_name: "Part",
                         name: "Block",
                         properties: {
+                            "Material.BaseColor": Color((
+                                r: 0.78,
+                                g: 0.82,
+                                b: 0.88,
+                                a: 1.0,
+                            )),
+                            "Material.Metallic": F32(0.0),
+                            "Material.Roughness": F32(0.65),
                             "Name": String("Block"),
                             "Transform.Position": Vec3((
                                 x: 0.0,
@@ -46,6 +54,14 @@
                         class_name: "Part",
                         name: "SecondBlock",
                         properties: {
+                            "Material.BaseColor": Color((
+                                r: 0.78,
+                                g: 0.82,
+                                b: 0.88,
+                                a: 1.0,
+                            )),
+                            "Material.Metallic": F32(0.0),
+                            "Material.Roughness": F32(0.65),
                             "Name": String("SecondBlock"),
                             "Transform.Position": Vec3((
                                 x: 0.0,

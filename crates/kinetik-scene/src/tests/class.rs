@@ -66,6 +66,18 @@ fn built_in_3d_classes_expose_capabilities_and_shared_properties() {
         part.property("Transform.Scale").unwrap().value_type,
         PropertyType::Vec3
     );
+    assert_eq!(
+        part.property("Material.BaseColor").unwrap().value_type,
+        PropertyType::Color
+    );
+    assert_eq!(
+        part.property("Material.Metallic").unwrap().value_type,
+        PropertyType::F32
+    );
+    assert_eq!(
+        part.property("Material.Roughness").unwrap().value_type,
+        PropertyType::F32
+    );
 
     let camera = registry.get("Camera3D").unwrap();
     assert!(camera.has_capability(InstanceClassCapability::Camera));

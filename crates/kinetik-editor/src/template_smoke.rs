@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use kinetik_render::{extract_render_scene, render_smoke_image, MISSING_MATERIAL_CODE};
+use kinetik_render::{extract_render_scene, render_smoke_image, StandardMaterial};
 use kinetik_scene::InstanceClassRegistry;
 
 use crate::{EditorModeState, EditorSession};
@@ -22,15 +22,56 @@ fn primitive_showcase_template_loads_saves_and_runs_headless_smoke() {
     assert!(extraction.camera.is_some());
     assert_eq!(extraction.lights.len(), 1);
     assert_eq!(extraction.primitives.len(), 3);
-    assert!(extraction
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == MISSING_MATERIAL_CODE));
+    assert!(extraction.diagnostics.is_empty());
 
     let smoke = render_smoke_image(&extraction, 128, 72);
     assert!(smoke.has_non_background_pixels());
 
     let saved_root = temp_project_root("primitive-showcase-save");
+    session.save_project_to(&saved_root).expect("save template");
+    assert_template_file_matches(&template_root, &saved_root, "Kinetik.toml");
+    assert_template_file_matches(&template_root, &saved_root, "project/assets.knmanifest");
+    assert_template_file_matches(&template_root, &saved_root, "scenes/main.knscene");
+    std::fs::remove_dir_all(saved_root).expect("cleanup saved template");
+}
+
+#[test]
+fn pbr_material_demo_template_loads_saves_and_runs_headless_smoke() {
+    let template_root = template_root("pbr-material-demo");
+    let mut session = load_template(&template_root);
+
+    let scene = session.active_scene().expect("active scene");
+    assert!(scene.get_by_path("/Game/Workspace/Camera").is_ok());
+    assert!(scene.get_by_path("/Game/Workspace/KeyLight").is_ok());
+    assert!(scene.get_by_path("/Game/Workspace/DielectricRough").is_ok());
+    assert!(scene
+        .get_by_path("/Game/Workspace/DielectricSmooth")
+        .is_ok());
+    assert!(scene.get_by_path("/Game/Workspace/MetalRough").is_ok());
+    assert!(scene.get_by_path("/Game/Workspace/MetalSmooth").is_ok());
+
+    let extraction = extract_render_scene(scene);
+    assert!(extraction.camera.is_some());
+    assert_eq!(extraction.lights.len(), 1);
+    assert_eq!(extraction.primitives.len(), 4);
+    assert!(extraction.diagnostics.is_empty());
+    assert_eq!(
+        extraction
+            .primitives
+            .iter()
+            .map(|primitive| (primitive.material.metallic, primitive.material.roughness))
+            .collect::<Vec<_>>(),
+        vec![(0.0, 0.9), (0.0, 0.15), (1.0, 0.75), (1.0, 0.1)]
+    );
+    assert!(extraction
+        .primitives
+        .iter()
+        .any(|primitive| primitive.material != StandardMaterial::FALLBACK));
+
+    let smoke = render_smoke_image(&extraction, 128, 72);
+    assert!(smoke.has_non_background_pixels());
+
+    let saved_root = temp_project_root("pbr-material-demo-save");
     session.save_project_to(&saved_root).expect("save template");
     assert_template_file_matches(&template_root, &saved_root, "Kinetik.toml");
     assert_template_file_matches(&template_root, &saved_root, "project/assets.knmanifest");
@@ -73,10 +114,15 @@ fn load_template(template_root: &Path) -> EditorSession {
 }
 
 fn primitive_showcase_root() -> PathBuf {
+    template_root("primitive-showcase")
+}
+
+fn template_root(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../templates/primitive-showcase")
+        .join("../../templates")
+        .join(name)
         .canonicalize()
-        .expect("primitive showcase template path")
+        .expect("template path")
 }
 
 fn default_scene_registry() -> InstanceClassRegistry {

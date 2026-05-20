@@ -1,4 +1,4 @@
-use kinetik_core::{Diagnostic, InstanceGuid, InstanceId, Transform};
+use kinetik_core::{Color, Diagnostic, InstanceGuid, InstanceId, Transform};
 use kinetik_reflect::PropertyValue;
 use kinetik_scene::Scene;
 
@@ -142,15 +142,39 @@ fn extract_part(scene: &Scene, id: InstanceId, extraction: &mut RenderExtraction
         ));
         return;
     };
-    extraction.diagnostics.push(render_diagnostic(
-        MISSING_MATERIAL_CODE,
-        format!("Part {} used StandardMaterial fallback", instance.name),
-    ));
+    let material = extract_standard_material(scene, id).unwrap_or_else(|| {
+        extraction.diagnostics.push(render_diagnostic(
+            MISSING_MATERIAL_CODE,
+            format!("Part {} used StandardMaterial fallback", instance.name),
+        ));
+        StandardMaterial::FALLBACK
+    });
     extraction.primitives.push(ExtractedPrimitive {
         instance_id: id,
         guid: instance.guid,
         transform,
         mesh: PrimitiveMesh::cube(),
-        material: StandardMaterial::FALLBACK,
+        material,
     });
+}
+
+fn extract_standard_material(scene: &Scene, id: InstanceId) -> Option<StandardMaterial> {
+    let base_color = color_property(scene, id, "Material.BaseColor")?;
+    let metallic = f32_property(scene, id, "Material.Metallic")?;
+    let roughness = f32_property(scene, id, "Material.Roughness")?;
+    Some(StandardMaterial::new(base_color, metallic, roughness))
+}
+
+fn color_property(scene: &Scene, id: InstanceId, property_path: &str) -> Option<Color> {
+    match scene.get_property(id, property_path).ok()? {
+        PropertyValue::Color(value) => Some(*value),
+        _ => None,
+    }
+}
+
+fn f32_property(scene: &Scene, id: InstanceId, property_path: &str) -> Option<f32> {
+    match scene.get_property(id, property_path).ok()? {
+        PropertyValue::F32(value) => Some(*value),
+        _ => None,
+    }
 }
