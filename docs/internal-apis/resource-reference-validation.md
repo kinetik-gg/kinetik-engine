@@ -60,6 +60,11 @@ future serialized-format review decides otherwise.
 Validation does not load source files, run importers, inspect generated cache
 artifacts, or assign replacement GUIDs.
 
+The resource-owned validation API operates on `AssetReference` and raw
+GUID/path fields. Scene/reflection integration should translate
+`PropertyValue::AssetReference` into that resource-owned shape at the boundary
+instead of making `kinetik-resource` depend on scene or reflection crates.
+
 ## Diagnostics
 
 Invalid asset-reference diagnostics include the most specific stable target data

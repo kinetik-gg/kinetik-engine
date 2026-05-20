@@ -51,6 +51,22 @@ pub enum ResourceError {
         /// Missing project asset path.
         path: AssetPath,
     },
+    /// Asset reference pointed at a GUID that is absent from the manifest.
+    MissingAssetReference {
+        /// Referenced stable asset identity.
+        guid: AssetGuid,
+        /// Stored readable asset path.
+        path: AssetPath,
+    },
+    /// Asset reference path no longer matches the manifest path for its GUID.
+    AssetReferencePathMismatch {
+        /// Referenced stable asset identity.
+        guid: AssetGuid,
+        /// Path stored on the reference.
+        stored_path: AssetPath,
+        /// Current manifest path for the same GUID.
+        manifest_path: AssetPath,
+    },
     /// Project layout validation found missing required paths.
     MissingProjectPaths {
         /// Missing workspace-relative paths.
@@ -79,6 +95,14 @@ impl ResourceError {
     pub const MISSING_SOURCE_ASSET_CODE: DiagnosticCode =
         DiagnosticCode::new("KT_RESOURCE_MISSING_SOURCE_ASSET");
 
+    /// Stable diagnostic code for asset references whose GUID is not in the manifest.
+    pub const MISSING_ASSET_REFERENCE_CODE: DiagnosticCode =
+        DiagnosticCode::new("KT_RESOURCE_MISSING_ASSET_REFERENCE");
+
+    /// Stable diagnostic code for asset references with stale readable paths.
+    pub const ASSET_REFERENCE_PATH_MISMATCH_CODE: DiagnosticCode =
+        DiagnosticCode::new("KT_RESOURCE_ASSET_REFERENCE_PATH_MISMATCH");
+
     /// Stable diagnostic code for missing project layout paths.
     pub const MISSING_PROJECT_PATHS_CODE: DiagnosticCode =
         DiagnosticCode::new("KT_RESOURCE_MISSING_PROJECT_PATHS");
@@ -97,6 +121,8 @@ impl ResourceError {
             }
             Self::InvalidImporterMetadata { .. } => Self::INVALID_IMPORTER_METADATA_CODE,
             Self::MissingSourceAsset { .. } => Self::MISSING_SOURCE_ASSET_CODE,
+            Self::MissingAssetReference { .. } => Self::MISSING_ASSET_REFERENCE_CODE,
+            Self::AssetReferencePathMismatch { .. } => Self::ASSET_REFERENCE_PATH_MISMATCH_CODE,
             Self::MissingProjectPaths { .. } => Self::MISSING_PROJECT_PATHS_CODE,
         }
     }
@@ -107,13 +133,21 @@ impl ResourceError {
         let mut location = DiagnosticLocation::new();
         match self {
             Self::InvalidAssetPath { path, .. } => location.asset_path = Some(path.clone()),
-            Self::DuplicateAssetPath { path } | Self::MissingSourceAsset { path, .. } => {
+            Self::DuplicateAssetPath { path }
+            | Self::MissingSourceAsset { path, .. }
+            | Self::MissingAssetReference { path, .. } => {
                 location.asset_path = Some(path.as_str().to_owned());
+            }
+            Self::AssetReferencePathMismatch { stored_path, .. } => {
+                location.asset_path = Some(stored_path.as_str().to_owned());
             }
             _ => {}
         }
         let blocking = match self {
             Self::MissingProjectPaths { .. } => DiagnosticBlockingScope::Build,
+            Self::MissingAssetReference { .. } | Self::AssetReferencePathMismatch { .. } => {
+                DiagnosticBlockingScope::Save
+            }
             _ => DiagnosticBlockingScope::Import,
         };
         Diagnostic::new(
@@ -149,6 +183,17 @@ impl fmt::Display for ResourceError {
             Self::MissingSourceAsset { guid, path } => {
                 write!(f, "source asset is missing for {guid} at {path}")
             }
+            Self::MissingAssetReference { guid, path } => {
+                write!(f, "asset reference points to missing {guid} at {path}")
+            }
+            Self::AssetReferencePathMismatch {
+                guid,
+                stored_path,
+                manifest_path,
+            } => write!(
+                f,
+                "asset reference path for {guid} is stale: stored {stored_path}, manifest {manifest_path}"
+            ),
             Self::MissingProjectPaths { paths } => {
                 write!(f, "project layout is missing required paths: ")?;
                 for (index, path) in paths.iter().enumerate() {
