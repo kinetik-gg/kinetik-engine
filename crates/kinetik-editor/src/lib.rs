@@ -11,6 +11,8 @@ mod viewport;
 
 #[cfg(test)]
 mod authoring_smoke;
+#[cfg(test)]
+mod template_smoke;
 
 pub use explorer::{ExplorerRow, ExplorerSnapshot};
 pub use inspector::{InspectorCommandError, InspectorPropertyRow, InspectorSnapshot};
