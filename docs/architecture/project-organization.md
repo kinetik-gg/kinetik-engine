@@ -86,3 +86,8 @@ contain prefab or scene instance trees.
 Agents should prefer editor/MCP commands when Kinetik Studio is open. Direct file
 edits are appropriate for closed-editor workflows, migrations, tests, and review
 tools, but the file layout must remain deterministic and easy to inspect.
+
+First-party repository templates use the same project layout and live under
+`templates/`. `examples/` is reserved for illustrative samples that are not
+template acceptance targets. See `docs/architecture/template-projects.md` for
+the template README, verification, screenshot, and golden-file contract.
