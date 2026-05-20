@@ -6,6 +6,7 @@
 //! are intentionally left to focused follow-up issues.
 
 mod change;
+mod dirty;
 mod error;
 mod history;
 mod mode;
@@ -13,6 +14,7 @@ mod result;
 mod target_mode;
 
 pub use change::{ChangeTarget, CommandChangeRecord, PropertyValueChange};
+pub use dirty::{DirtyChangeExplanation, DirtyDocumentExplanation, DirtyStateExplanation};
 pub use error::{CommandError, CommandModelResult};
 pub use history::{CommandHistory, UndoGroupId, UndoRedoRecord};
 pub use mode::{CommandStatus, CommandTargetMode};

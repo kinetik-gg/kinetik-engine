@@ -292,6 +292,111 @@ fn command_history_clears_redo_after_new_commit() {
 }
 
 #[test]
+fn dirty_state_explanation_is_clean_for_empty_history() {
+    let explanation = DirtyStateExplanation::from_history(&CommandHistory::new());
+
+    assert!(explanation.is_clean());
+    assert!(explanation.documents().is_empty());
+    assert!(explanation.changes().is_empty());
+}
+
+#[test]
+fn dirty_state_explanation_groups_documents_in_first_seen_order() {
+    let first = CommandResult::succeeded_with_changes(
+        "RenameInstance",
+        CommandTargetMode::Edit,
+        [
+            CommandChangeRecord::new("RenameInstance", CommandTargetMode::Edit, "A renamed")
+                .unwrap()
+                .with_affected_documents(vec!["scenes/main.knscene".to_owned()]),
+            CommandChangeRecord::new(
+                "RenameInstance",
+                CommandTargetMode::Edit,
+                "Manifest touched",
+            )
+            .unwrap()
+            .with_affected_documents(vec!["project/instances.knmanifest".to_owned()]),
+        ],
+    )
+    .unwrap();
+    let second = CommandResult::succeeded_with_changes(
+        "SetProperty",
+        CommandTargetMode::Edit,
+        [
+            CommandChangeRecord::new("SetProperty", CommandTargetMode::Edit, "A moved")
+                .unwrap()
+                .with_affected_documents(vec!["scenes/main.knscene".to_owned()]),
+        ],
+    )
+    .unwrap();
+    let mut history = CommandHistory::new();
+    history.commit_result("Rename A", &first).unwrap().unwrap();
+    history.commit_result("Move A", &second).unwrap().unwrap();
+
+    let explanation = DirtyStateExplanation::from_history(&history);
+
+    assert!(!explanation.is_clean());
+    assert_eq!(explanation.documents().len(), 2);
+    assert_eq!(
+        explanation.documents()[0].document_path(),
+        "scenes/main.knscene"
+    );
+    assert_eq!(
+        explanation.documents()[0].summaries(),
+        &["A renamed".to_owned(), "A moved".to_owned()]
+    );
+    assert_eq!(
+        explanation.documents()[1].document_path(),
+        "project/instances.knmanifest"
+    );
+    assert_eq!(
+        explanation.documents()[1].summaries(),
+        &["Manifest touched".to_owned()]
+    );
+}
+
+#[test]
+fn dirty_state_explanation_preserves_change_history_order_and_group_context() {
+    let result = CommandResult::succeeded_with_changes(
+        "RenameInstance",
+        CommandTargetMode::Edit,
+        [
+            CommandChangeRecord::new("RenameInstance", CommandTargetMode::Edit, "A renamed")
+                .unwrap()
+                .with_affected_documents(vec!["scenes/main.knscene".to_owned()]),
+            CommandChangeRecord::new("RenameInstance", CommandTargetMode::Edit, "B renamed")
+                .unwrap()
+                .with_affected_documents(vec!["scenes/main.knscene".to_owned()]),
+        ],
+    )
+    .unwrap();
+    let mut history = CommandHistory::new();
+    let record = history
+        .commit_result("Rename instances", &result)
+        .unwrap()
+        .unwrap();
+
+    let explanation = DirtyStateExplanation::from_history(&history);
+
+    assert_eq!(explanation.changes().len(), 2);
+    assert_eq!(explanation.changes()[0].undo_group(), record.group_id());
+    assert_eq!(
+        explanation.changes()[0].target_mode(),
+        CommandTargetMode::Edit
+    );
+    assert_eq!(
+        explanation.changes()[0].command_summary(),
+        "Rename instances"
+    );
+    assert_eq!(explanation.changes()[0].change_summary(), "A renamed");
+    assert_eq!(explanation.changes()[1].change_summary(), "B renamed");
+    assert_eq!(
+        explanation.changes()[1].affected_documents(),
+        &["scenes/main.knscene".to_owned()]
+    );
+}
+
+#[test]
 fn command_result_failure_preserves_diagnostic_order() {
     let first = CommandError::AmbiguousTargetMode {
         command_kind: "SetProperty".to_owned(),
