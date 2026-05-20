@@ -261,12 +261,12 @@ impl DiagnosticsPanelState {
 /// Open Kinetik Studio editor session state.
 #[derive(Debug, Default)]
 pub struct EditorSession {
-    project: Option<ProjectModel>,
-    active_scene: Option<Scene>,
-    selection: EditorSelection,
-    command_history: CommandHistory,
-    session_diagnostics: Vec<Diagnostic>,
-    mode: EditorModeState,
+    pub(crate) project: Option<ProjectModel>,
+    pub(crate) active_scene: Option<Scene>,
+    pub(crate) selection: EditorSelection,
+    pub(crate) command_history: CommandHistory,
+    pub(crate) session_diagnostics: Vec<Diagnostic>,
+    pub(crate) mode: EditorModeState,
 }
 
 /// Error returned by command-backed Explorer actions.
@@ -567,7 +567,7 @@ impl EditorSession {
         self.mode = EditorModeState::Edit;
     }
 
-    fn active_scene_document_path(&self) -> Result<String, ExplorerCommandError> {
+    pub(crate) fn active_scene_document_path(&self) -> Result<String, ExplorerCommandError> {
         let project = self
             .project
             .as_ref()
@@ -602,7 +602,7 @@ impl EditorSession {
             .map_err(|error| ExplorerCommandError::Scene(error.to_string()))
     }
 
-    fn refresh_selection_if_selected(
+    pub(crate) fn refresh_selection_if_selected(
         &mut self,
         id: InstanceId,
     ) -> Result<(), ExplorerCommandError> {

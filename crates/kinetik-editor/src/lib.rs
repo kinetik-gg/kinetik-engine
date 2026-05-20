@@ -1,11 +1,13 @@
 //! editor scaffold for Kinetik.
 
 mod explorer;
+mod inspector;
 mod mcp;
 mod session;
 mod shell;
 
 pub use explorer::{ExplorerRow, ExplorerSnapshot};
+pub use inspector::{InspectorCommandError, InspectorPropertyRow, InspectorSnapshot};
 pub use mcp::{
     diagnostics_list_response, dirty_state_response, project_status_response,
     resource_manifest_response, scene_hierarchy_response, DiagnosticSummary, DirtyStateResponse,

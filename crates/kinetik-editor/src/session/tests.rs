@@ -5,10 +5,11 @@ use kinetik_core::{
 use kinetik_project::{
     ProjectDocumentRefs, ProjectIdentity, ProjectModel, ProjectSettingsDocument,
 };
+use kinetik_reflect::{EditorEditability, PropertyType, PropertyValue};
 use kinetik_scene::Scene;
 
 use super::*;
-use crate::EditorPanel;
+use crate::{EditorPanel, InspectorCommandError};
 
 fn demo_project() -> ProjectModel {
     ProjectModel::new(
@@ -266,4 +267,105 @@ fn explorer_rejects_invalid_command_without_dirtying_session() {
 
     assert!(matches!(error, ExplorerCommandError::Command(_)));
     assert!(session.dirty_state().is_clean());
+}
+
+#[test]
+fn inspector_snapshot_uses_reflection_descriptors_and_current_values() {
+    let mut session = open_demo_session();
+    let workspace = session
+        .active_scene()
+        .unwrap()
+        .get_by_path("/Game/Workspace")
+        .unwrap()
+        .id;
+    let part = session
+        .explorer_create_child(workspace, "Part", "Block")
+        .expect("create part");
+
+    let inspector = session.inspector_snapshot(part).expect("inspector");
+    let name = inspector.row("Name").expect("name row");
+    let visible = inspector.row("Visible").expect("visible row");
+    let position = inspector.row("Transform.Position").expect("position row");
+
+    assert_eq!(inspector.scene_path, "/Game/Workspace/Block");
+    assert_eq!(inspector.class_name, "Part");
+    assert_eq!(name.display_name, "Name");
+    assert_eq!(name.value_type, PropertyType::String);
+    assert_eq!(name.value, PropertyValue::String("Block".to_owned()));
+    assert_eq!(visible.value, PropertyValue::Bool(true));
+    assert_eq!(position.editability, EditorEditability::Editable);
+}
+
+#[test]
+fn inspector_set_selected_property_uses_command_path_and_refreshes_selection() {
+    let mut session = open_demo_session();
+    let workspace = session
+        .active_scene()
+        .unwrap()
+        .get_by_path("/Game/Workspace")
+        .unwrap()
+        .id;
+    let scene = session.active_scene().unwrap().clone();
+    session
+        .selection_mut()
+        .select_scene_instance(&scene, workspace)
+        .unwrap();
+
+    session
+        .inspector_set_selected_property("Name", PropertyValue::String("World".to_owned()))
+        .expect("set selected name");
+
+    assert_eq!(
+        session.active_scene().unwrap().path(workspace).unwrap(),
+        "/Game/World"
+    );
+    assert!(matches!(
+        session.selection().document(),
+        EditorDocumentSelection::SceneInstance { scene_path, .. } if scene_path == "/Game/World"
+    ));
+    assert_eq!(
+        session.dirty_state().changes()[0].change_summary(),
+        "set /Game/Workspace.Name"
+    );
+}
+
+#[test]
+fn inspector_rejects_invalid_property_value_without_dirtying_session() {
+    let mut session = open_demo_session();
+    let workspace = session
+        .active_scene()
+        .unwrap()
+        .get_by_path("/Game/Workspace")
+        .unwrap()
+        .id;
+    let part = session
+        .explorer_create_child(workspace, "Part", "Block")
+        .expect("create part");
+    let dirty_before = session.dirty_state().changes().len();
+
+    let error = session
+        .inspector_set_property(part, "Visible", PropertyValue::String("yes".to_owned()))
+        .expect_err("invalid type should fail");
+
+    assert!(matches!(error, InspectorCommandError::Command(_)));
+    assert_eq!(session.dirty_state().changes().len(), dirty_before);
+    assert_eq!(
+        session
+            .active_scene()
+            .unwrap()
+            .get_property(part, "Visible")
+            .unwrap(),
+        &PropertyValue::Bool(true)
+    );
+}
+
+#[test]
+fn selected_inspector_requires_scene_instance_selection() {
+    let session = open_demo_session();
+
+    let error = session
+        .selected_inspector_snapshot()
+        .expect_err("no scene instance selected");
+
+    assert_eq!(error, InspectorCommandError::NoSelectedInstance);
 }
