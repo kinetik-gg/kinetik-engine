@@ -5,11 +5,19 @@ pub use mutating::{
     McpUndoRedoResponse,
 };
 
-use kinetik_command::DirtyStateExplanation;
-use kinetik_core::{Diagnostic, DiagnosticBlockingScope, DiagnosticSeverity, InstanceGuid};
+use kinetik_command::{
+    require_specific_target_mode, CommandError, CommandResult, CommandTargetMode,
+    DirtyStateExplanation, UndoRedoRecord,
+};
+use kinetik_core::{
+    Diagnostic, DiagnosticBlockingScope, DiagnosticSeverity, InstanceGuid, InstanceId,
+};
 use kinetik_project::{ProjectDocumentRefs, ProjectSettingsDocument};
 use kinetik_resource::AssetManifest;
 use kinetik_scene::Scene;
+
+use crate::{EditorDocumentSelection, EditorPanel, EditorSession};
+use mutating::execute_scene_command;
 
 /// Editor-owned read-only MCP command names.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -132,6 +140,79 @@ pub struct DirtyStateResponse {
     pub summaries: Vec<String>,
 }
 
+/// Read-only editor selection response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpSelectionResponse {
+    /// No document or scene instance is selected.
+    None,
+    /// A scene instance is selected in edit state.
+    SceneInstance {
+        /// Runtime/editor session instance ID raw value.
+        instance_id: u64,
+        /// Stable serialized instance GUID raw value.
+        guid: u64,
+        /// Human-readable scene path.
+        scene_path: String,
+    },
+    /// A project document is selected.
+    ProjectDocument {
+        /// Workspace-relative project document path.
+        path: String,
+    },
+}
+
+/// Editor session snapshot exposed to agent-facing MCP helpers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpEditorSnapshot {
+    /// Active project status, when a project is open.
+    pub project: Option<ProjectStatusResponse>,
+    /// Active scene hierarchy, empty when no scene is open or projection fails.
+    pub scene: Vec<SceneInstanceSummary>,
+    /// Active resource manifest entries.
+    pub resources: ResourceManifestResponse,
+    /// Current selection.
+    pub selection: McpSelectionResponse,
+    /// Focused editor panel.
+    pub focus: Option<EditorPanel>,
+    /// Current diagnostics.
+    pub diagnostics: Vec<DiagnosticSummary>,
+    /// Current dirty-state explanation.
+    pub dirty_state: DirtyStateResponse,
+}
+
+/// Selection and focus requests that MCP can apply to the editor session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpSelectionRequest {
+    /// Select a scene instance by runtime/editor session ID.
+    SelectSceneInstance {
+        /// Instance ID to select.
+        instance_id: InstanceId,
+    },
+    /// Select a project document.
+    SelectProjectDocument {
+        /// Workspace-relative project document path.
+        path: String,
+    },
+    /// Focus an editor panel without changing selection.
+    FocusPanel {
+        /// Panel to focus.
+        panel: EditorPanel,
+    },
+    /// Clear current selection and focus.
+    Clear,
+}
+
+/// Selection/focus command response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpSelectionCommandResponse {
+    /// Selection after applying the request.
+    pub selection: McpSelectionResponse,
+    /// Focus after applying the request.
+    pub focus: Option<EditorPanel>,
+    /// Validation diagnostics, when the request failed.
+    pub diagnostics: Vec<DiagnosticSummary>,
+}
+
 /// Builds a read-only project status response.
 #[must_use]
 pub fn project_status_response(
@@ -218,6 +299,188 @@ pub fn dirty_state_response(explanation: &DirtyStateExplanation) -> DirtyStateRe
         is_dirty: !documents.is_empty(),
         documents,
         summaries,
+    }
+}
+
+/// Builds a read-only selection response.
+#[must_use]
+pub fn selection_response(selection: &EditorDocumentSelection) -> McpSelectionResponse {
+    match selection {
+        EditorDocumentSelection::None => McpSelectionResponse::None,
+        EditorDocumentSelection::SceneInstance {
+            id,
+            guid,
+            scene_path,
+        } => McpSelectionResponse::SceneInstance {
+            instance_id: id.raw(),
+            guid: guid.raw(),
+            scene_path: scene_path.clone(),
+        },
+        EditorDocumentSelection::ProjectDocument { path } => {
+            McpSelectionResponse::ProjectDocument { path: path.clone() }
+        }
+    }
+}
+
+impl EditorSession {
+    /// Returns a complete MCP snapshot of the current editor session state.
+    #[must_use]
+    pub fn mcp_snapshot(&self) -> McpEditorSnapshot {
+        let project = self
+            .project()
+            .map(|project| project_status_response(project.settings(), project.documents()));
+        let scene = self
+            .active_scene()
+            .and_then(|scene| scene_hierarchy_response(scene).ok())
+            .unwrap_or_default();
+        let diagnostics = self
+            .diagnostics_panel()
+            .items()
+            .iter()
+            .map(|item| DiagnosticSummary {
+                code: item.code.clone(),
+                severity: item.severity,
+                source: item.source.clone(),
+                message: item.message.clone(),
+                blocking: item.blocking,
+                instance_guid: None,
+                scene_path: None,
+                asset_path: None,
+                script_path: None,
+                property_path: None,
+            })
+            .collect();
+
+        McpEditorSnapshot {
+            project,
+            scene,
+            resources: resource_manifest_response(self.asset_manifest()),
+            selection: selection_response(self.selection().document()),
+            focus: self.selection().focus().panel(),
+            diagnostics,
+            dirty_state: dirty_state_response(&self.dirty_state()),
+        }
+    }
+
+    /// Applies a selection/focus request through the editor session authority.
+    pub fn mcp_apply_selection(
+        &mut self,
+        request: McpSelectionRequest,
+    ) -> McpSelectionCommandResponse {
+        let result = match request {
+            McpSelectionRequest::SelectSceneInstance { instance_id } => self
+                .active_scene()
+                .cloned()
+                .ok_or_else(|| mcp_validation_error("editor.select", "no active scene is open"))
+                .and_then(|scene| {
+                    self.selection_mut()
+                        .select_scene_instance(&scene, instance_id)
+                        .map_err(|error| mcp_validation_error("editor.select", error.to_string()))
+                }),
+            McpSelectionRequest::SelectProjectDocument { path } => {
+                self.selection_mut().select_project_document(path);
+                Ok(())
+            }
+            McpSelectionRequest::FocusPanel { panel } => {
+                self.selection_mut().focus_panel(panel);
+                Ok(())
+            }
+            McpSelectionRequest::Clear => {
+                self.selection_mut().clear();
+                Ok(())
+            }
+        };
+        let diagnostics = result
+            .err()
+            .map(|error| vec![error.to_diagnostic()])
+            .unwrap_or_default();
+        McpSelectionCommandResponse {
+            selection: selection_response(self.selection().document()),
+            focus: self.selection().focus().panel(),
+            diagnostics: diagnostics_list_response(&diagnostics),
+        }
+    }
+
+    /// Executes a scene mutation through the session-owned command history.
+    pub fn mcp_execute_scene_mutation(
+        &mut self,
+        request: McpSceneMutationRequest,
+    ) -> McpMutationResponse {
+        let command_kind = request.command_kind();
+        let target_mode = request.target_mode();
+        let result =
+            require_specific_target_mode(command_kind, target_mode, CommandTargetMode::Edit)
+                .and_then(|_| {
+                    let document_path = self
+                        .project()
+                        .ok_or_else(|| mcp_validation_error(command_kind, "no project is open"))?
+                        .documents()
+                        .active_scene()
+                        .to_owned();
+                    let scene = self.active_scene_mut().ok_or_else(|| {
+                        mcp_validation_error(command_kind, "no active scene is open")
+                    })?;
+                    execute_scene_command(scene, request, &document_path)
+                });
+        self.mcp_response_from_result(command_kind, target_mode, result)
+    }
+
+    /// Moves the latest editor session undo record to the redo stack.
+    pub fn mcp_undo(&mut self) -> McpUndoRedoResponse {
+        let record = self.command_history_mut().pop_undo();
+        self.mcp_undo_redo_response(record)
+    }
+
+    /// Moves the latest editor session redo record back to the undo stack.
+    pub fn mcp_redo(&mut self) -> McpUndoRedoResponse {
+        let record = self.command_history_mut().pop_redo();
+        self.mcp_undo_redo_response(record)
+    }
+
+    fn mcp_response_from_result(
+        &mut self,
+        command_kind: &str,
+        target_mode: Option<CommandTargetMode>,
+        result: Result<CommandResult, CommandError>,
+    ) -> McpMutationResponse {
+        let command = result.unwrap_or_else(|error| {
+            CommandResult::rejected(command_kind, target_mode, &error)
+                .expect("MCP command kind constants should be valid")
+        });
+        let history_record = self
+            .command_history_mut()
+            .commit_result(command.command_kind(), &command)
+            .expect("MCP command summaries should be valid");
+
+        McpMutationResponse {
+            command_kind: command.command_kind().to_owned(),
+            target_mode: command.target_mode(),
+            status: command.status(),
+            diagnostics: diagnostics_list_response(command.diagnostics()),
+            change_summaries: command
+                .changes()
+                .iter()
+                .map(|change| change.dirty_summary().to_owned())
+                .collect(),
+            undo_group: history_record.map(|record| record.group_id().raw()),
+            dirty_state: dirty_state_response(&self.dirty_state()),
+        }
+    }
+
+    fn mcp_undo_redo_response(&self, record: Option<UndoRedoRecord>) -> McpUndoRedoResponse {
+        McpUndoRedoResponse {
+            moved: record.is_some(),
+            undo_group: record.as_ref().map(|record| record.group_id().raw()),
+            summary: record.map(|record| record.summary().to_owned()),
+            dirty_state: dirty_state_response(&self.dirty_state()),
+        }
+    }
+}
+
+fn mcp_validation_error(command_kind: &str, reason: impl Into<String>) -> CommandError {
+    CommandError::ValidationFailed {
+        command_kind: command_kind.to_owned(),
+        reason: reason.into(),
     }
 }
 
