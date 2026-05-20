@@ -4,6 +4,7 @@ use kinetik_core::{DiagnosticBlockingScope, DiagnosticSeverity, InstanceGuid};
 use kinetik_reflect::PropertyValue;
 
 mod scene_commands;
+mod scene_property_commands;
 
 #[test]
 fn exposes_crate_name() {

@@ -19,6 +19,9 @@ pub const DELETE_INSTANCE_COMMAND: &str = "DeleteInstance";
 /// Stable command kind for edit-mode scene instance reparenting.
 pub const REPARENT_INSTANCE_COMMAND: &str = "ReparentInstance";
 
+/// Stable command kind for edit-mode reflected property changes.
+pub const SET_PROPERTY_COMMAND: &str = "SetProperty";
+
 /// Result of a successful scene child creation command.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SceneCreateCommandResult {
@@ -48,6 +51,21 @@ pub struct SceneReparentCommandResult {
     pub old_parent: Option<InstanceId>,
     /// New parent scene instance ID.
     pub new_parent: InstanceId,
+    /// Command result containing semantic change records.
+    pub command: CommandResult,
+}
+
+/// Result of a successful scene reflected property set command.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SceneSetPropertyCommandResult {
+    /// Target scene instance ID.
+    pub instance_id: InstanceId,
+    /// Reflected property path that was changed.
+    pub property_path: String,
+    /// Previous reflected property value.
+    pub old_value: PropertyValue,
+    /// New reflected property value.
+    pub new_value: PropertyValue,
     /// Command result containing semantic change records.
     pub command: CommandResult,
 }
@@ -275,6 +293,75 @@ pub fn reparent_scene_instance(
         new_parent,
         command: CommandResult::succeeded_with_changes(
             REPARENT_INSTANCE_COMMAND,
+            CommandTargetMode::Edit,
+            [change],
+        )?,
+    })
+}
+
+/// Sets a reflected scene instance property through the shared command result model.
+///
+/// # Errors
+///
+/// Returns [`CommandError`] when scene validation fails before mutation.
+pub fn set_scene_instance_property(
+    scene: &mut Scene,
+    instance_id: InstanceId,
+    property_path: impl Into<String>,
+    value: PropertyValue,
+    document_path: impl Into<String>,
+) -> CommandModelResult<SceneSetPropertyCommandResult> {
+    let property_path = property_path.into();
+    let document_path = document_path.into();
+    let instance = scene
+        .get(instance_id)
+        .map_err(|error| scene_validation_error(SET_PROPERTY_COMMAND, &error))?;
+    let guid = instance.guid;
+    let old_value = scene
+        .get_property(instance_id, &property_path)
+        .map_err(|error| scene_validation_error(SET_PROPERTY_COMMAND, &error))?
+        .clone();
+    let old_path = scene
+        .path(instance_id)
+        .map_err(|error| scene_validation_error(SET_PROPERTY_COMMAND, &error))?;
+
+    scene
+        .set_property(instance_id, &property_path, value.clone())
+        .map_err(|error| scene_validation_error(SET_PROPERTY_COMMAND, &error))?;
+    let new_path = scene
+        .path(instance_id)
+        .map_err(|error| scene_validation_error(SET_PROPERTY_COMMAND, &error))?;
+
+    let change = CommandChangeRecord::new(
+        SET_PROPERTY_COMMAND,
+        CommandTargetMode::Edit,
+        format!("set {old_path}.{property_path}"),
+    )?
+    .with_targets(vec![
+        ChangeTarget::Instance {
+            guid: Some(guid),
+            scene_path: Some(new_path.clone()),
+        },
+        ChangeTarget::Property {
+            instance_guid: Some(guid),
+            scene_path: Some(new_path),
+            property_path: property_path.clone(),
+        },
+    ])
+    .with_property_value_change(PropertyValueChange::new(
+        property_path.clone(),
+        Some(old_value.clone()),
+        Some(value.clone()),
+    ))
+    .with_affected_documents(vec![document_path]);
+
+    Ok(SceneSetPropertyCommandResult {
+        instance_id,
+        property_path,
+        old_value,
+        new_value: value,
+        command: CommandResult::succeeded_with_changes(
+            SET_PROPERTY_COMMAND,
             CommandTargetMode::Edit,
             [change],
         )?,
