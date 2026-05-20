@@ -292,6 +292,8 @@ Key outputs:
 - Lifecycle scheduling for `Ready`, `Update`, `PhysicsUpdate`, and `Exit`.
 - Safe instance/resource handle boundaries.
 - Script diagnostics and queued structural changes from scripts.
+- Language-neutral contracts in `kinetik-script` that can host the Luau bridge
+  now and future script backends later without leaking VM internals.
 
 Representative issues: script attachment contract; lifecycle dispatch contract;
 safe script handle API; script diagnostics; structural-change queue integration.
@@ -299,8 +301,8 @@ safe script handle API; script diagnostics; structural-change queue integration.
 Implementation level: Level 3.
 Required tests/checks: Level 3 checks, fake-runtime lifecycle ordering tests,
 missing-script and invalid-handle diagnostics.
-Human verification: confirm the contract can support Luau without VM internals
-leaking.
+Human verification: confirm the contract supports Luau without VM internals
+leaking and does not unnecessarily prevent future `.kn` script coexistence.
 
 ## M13: Editor Command Surface
 
