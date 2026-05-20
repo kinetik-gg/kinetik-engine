@@ -3,6 +3,8 @@ use super::*;
 use kinetik_core::{DiagnosticBlockingScope, DiagnosticSeverity, InstanceGuid};
 use kinetik_reflect::PropertyValue;
 
+mod scene_commands;
+
 #[test]
 fn exposes_crate_name() {
     assert_eq!(crate_name(), "kinetik-command");
@@ -25,6 +27,10 @@ fn command_error_diagnostic_codes_are_stable() {
     assert_eq!(
         CommandError::WRONG_TARGET_MODE_CODE.as_str(),
         "KT_COMMAND_WRONG_TARGET_MODE"
+    );
+    assert_eq!(
+        CommandError::VALIDATION_FAILED_CODE.as_str(),
+        "KT_COMMAND_VALIDATION_FAILED"
     );
     assert_eq!(CommandError::COMMAND_SOURCE.as_str(), "Command");
 }

@@ -30,6 +30,13 @@ pub enum CommandError {
         /// Actual command target mode.
         actual: CommandTargetMode,
     },
+    /// Command validation failed before mutation.
+    ValidationFailed {
+        /// Command kind that failed validation.
+        command_kind: String,
+        /// Validation failure reason.
+        reason: String,
+    },
 }
 
 impl CommandError {
@@ -49,6 +56,10 @@ impl CommandError {
     pub const WRONG_TARGET_MODE_CODE: DiagnosticCode =
         DiagnosticCode::new("KT_COMMAND_WRONG_TARGET_MODE");
 
+    /// Stable diagnostic code for command validation failures.
+    pub const VALIDATION_FAILED_CODE: DiagnosticCode =
+        DiagnosticCode::new("KT_COMMAND_VALIDATION_FAILED");
+
     /// Diagnostic source for command-owned validation.
     pub const COMMAND_SOURCE: DiagnosticSource = DiagnosticSource::new("Command");
 
@@ -60,6 +71,7 @@ impl CommandError {
             Self::EmptyDirtySummary => Self::EMPTY_DIRTY_SUMMARY_CODE,
             Self::AmbiguousTargetMode { .. } => Self::AMBIGUOUS_TARGET_MODE_CODE,
             Self::WrongTargetMode { .. } => Self::WRONG_TARGET_MODE_CODE,
+            Self::ValidationFailed { .. } => Self::VALIDATION_FAILED_CODE,
         }
     }
 
@@ -93,6 +105,10 @@ impl fmt::Display for CommandError {
                 f,
                 "command {command_kind} targets {actual} mode but requires {expected} mode"
             ),
+            Self::ValidationFailed {
+                command_kind,
+                reason,
+            } => write!(f, "command {command_kind} failed validation: {reason}"),
         }
     }
 }
