@@ -22,8 +22,9 @@ pub use mode::{CommandStatus, CommandTargetMode};
 pub use result::CommandResult;
 pub use scene::{
     create_scene_child_instance, delete_scene_instance, rename_scene_instance,
-    SceneCreateCommandResult, SceneDeleteCommandResult, CREATE_INSTANCE_COMMAND,
-    DELETE_INSTANCE_COMMAND, RENAME_INSTANCE_COMMAND,
+    reparent_scene_instance, SceneCreateCommandResult, SceneDeleteCommandResult,
+    SceneReparentCommandResult, CREATE_INSTANCE_COMMAND, DELETE_INSTANCE_COMMAND,
+    RENAME_INSTANCE_COMMAND, REPARENT_INSTANCE_COMMAND,
 };
 pub use target_mode::{require_specific_target_mode, require_target_mode};
 

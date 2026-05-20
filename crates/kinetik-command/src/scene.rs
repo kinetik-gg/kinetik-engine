@@ -16,6 +16,9 @@ pub const CREATE_INSTANCE_COMMAND: &str = "CreateInstance";
 /// Stable command kind for edit-mode scene instance deletion.
 pub const DELETE_INSTANCE_COMMAND: &str = "DeleteInstance";
 
+/// Stable command kind for edit-mode scene instance reparenting.
+pub const REPARENT_INSTANCE_COMMAND: &str = "ReparentInstance";
+
 /// Result of a successful scene child creation command.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SceneCreateCommandResult {
@@ -32,6 +35,19 @@ pub struct SceneDeleteCommandResult {
     pub instance_id: InstanceId,
     /// Deleted instance IDs in deterministic parent-before-child order.
     pub deleted_ids: Vec<InstanceId>,
+    /// Command result containing semantic change records.
+    pub command: CommandResult,
+}
+
+/// Result of a successful scene instance reparent command.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SceneReparentCommandResult {
+    /// Reparented scene instance ID.
+    pub instance_id: InstanceId,
+    /// Previous parent scene instance ID, if any.
+    pub old_parent: Option<InstanceId>,
+    /// New parent scene instance ID.
+    pub new_parent: InstanceId,
     /// Command result containing semantic change records.
     pub command: CommandResult,
 }
@@ -209,6 +225,62 @@ pub fn delete_scene_instance(
     })
 }
 
+/// Reparents a scene instance through the shared command result model.
+///
+/// # Errors
+///
+/// Returns [`CommandError`] when scene validation fails before mutation.
+pub fn reparent_scene_instance(
+    scene: &mut Scene,
+    instance_id: InstanceId,
+    new_parent: InstanceId,
+    document_path: impl Into<String>,
+) -> CommandModelResult<SceneReparentCommandResult> {
+    let document_path = document_path.into();
+    let instance = scene
+        .get(instance_id)
+        .map_err(|error| scene_validation_error(REPARENT_INSTANCE_COMMAND, &error))?;
+    let guid = instance.guid;
+    let old_path = scene
+        .path(instance_id)
+        .map_err(|error| scene_validation_error(REPARENT_INSTANCE_COMMAND, &error))?;
+    scene
+        .get(new_parent)
+        .map_err(|error| scene_validation_error(REPARENT_INSTANCE_COMMAND, &error))?;
+
+    let mut queue = SceneMutationQueue::new();
+    queue.reparent(instance_id, new_parent);
+    let results = scene
+        .apply_mutations(queue)
+        .map_err(|error| scene_validation_error(REPARENT_INSTANCE_COMMAND, &error))?;
+    let old_parent = reparented_old_parent(&results)?;
+    let new_path = scene
+        .path(instance_id)
+        .map_err(|error| scene_validation_error(REPARENT_INSTANCE_COMMAND, &error))?;
+
+    let change = CommandChangeRecord::new(
+        REPARENT_INSTANCE_COMMAND,
+        CommandTargetMode::Edit,
+        format!("moved {old_path} to {new_path}"),
+    )?
+    .with_targets(vec![ChangeTarget::Instance {
+        guid: Some(guid),
+        scene_path: Some(new_path),
+    }])
+    .with_affected_documents(vec![document_path]);
+
+    Ok(SceneReparentCommandResult {
+        instance_id,
+        old_parent,
+        new_parent,
+        command: CommandResult::succeeded_with_changes(
+            REPARENT_INSTANCE_COMMAND,
+            CommandTargetMode::Edit,
+            [change],
+        )?,
+    })
+}
+
 fn scene_validation_error(command_kind: &str, error: &kinetik_scene::SceneError) -> CommandError {
     CommandError::ValidationFailed {
         command_kind: command_kind.to_owned(),
@@ -232,6 +304,22 @@ fn deleted_instance_ids(results: &[SceneMutationResult]) -> CommandModelResult<V
         _ => Err(CommandError::ValidationFailed {
             command_kind: DELETE_INSTANCE_COMMAND.to_owned(),
             reason: "scene delete command did not produce one deleted subtree".to_owned(),
+        }),
+    }
+}
+
+fn reparented_old_parent(
+    results: &[SceneMutationResult],
+) -> CommandModelResult<Option<InstanceId>> {
+    match results {
+        [SceneMutationResult::Reparented {
+            id: _,
+            old_parent,
+            new_parent: _,
+        }] => Ok(*old_parent),
+        _ => Err(CommandError::ValidationFailed {
+            command_kind: REPARENT_INSTANCE_COMMAND.to_owned(),
+            reason: "scene reparent command did not produce one moved instance".to_owned(),
         }),
     }
 }
