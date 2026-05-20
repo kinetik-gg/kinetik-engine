@@ -3,7 +3,7 @@ use kinetik_core::{InstanceGuid, InstanceId, SignalId};
 use crate::{
     QueuedSignalEvent, SignalConnection, SignalConnectionId, SignalConnectionState,
     SignalDeliveryRecord, SignalDescriptor, SignalError, SignalFlushDomain, SignalOwner,
-    SignalResult,
+    SignalOwnerCleanup, SignalResult,
 };
 
 /// Deterministic signal registry and connection table.
@@ -12,6 +12,7 @@ pub struct SignalRegistry {
     signals: Vec<SignalDescriptor>,
     connections: Vec<SignalConnection>,
     events: Vec<QueuedSignalEvent>,
+    next_signal_id: u64,
     next_frame_sequence: u64,
     next_fixed_step_sequence: u64,
 }
@@ -49,7 +50,8 @@ impl SignalRegistry {
             return Err(SignalError::DuplicateSignal { owner, name });
         }
 
-        let id = SignalId::new(self.signals.len() as u64 + 1);
+        self.next_signal_id += 1;
+        let id = SignalId::new(self.next_signal_id);
         self.signals.push(SignalDescriptor {
             id,
             owner,
@@ -239,6 +241,60 @@ impl SignalRegistry {
         records
     }
 
+    /// Cleans up runtime signal state owned by `owner`.
+    ///
+    /// Owner-owned descriptors are removed, connections targeting those
+    /// descriptors are invalidated, and queued events targeting those signals
+    /// are removed. For instance owners, queued events emitted by the destroyed
+    /// runtime instance are also removed.
+    pub fn cleanup_owner(&mut self, owner: SignalOwner) -> SignalOwnerCleanup {
+        let affected_signals = self
+            .signals
+            .iter()
+            .filter_map(|signal| (signal.owner == owner).then_some(signal.id))
+            .collect::<Vec<_>>();
+        let mut invalidated_connections = Vec::new();
+        if !affected_signals.is_empty() {
+            for connection in &mut self.connections {
+                if affected_signals.contains(&connection.signal_id)
+                    && connection.state != SignalConnectionState::Invalidated
+                {
+                    connection.state = SignalConnectionState::Invalidated;
+                    invalidated_connections.push(connection.id);
+                }
+            }
+            self.signals.retain(|signal| signal.owner != owner);
+        }
+
+        let mut removed_events = Vec::new();
+        let mut retained_events = Vec::new();
+        for event in self.events.drain(..) {
+            if event_matches_owner_cleanup(&event, owner, &affected_signals) {
+                removed_events.push(event);
+            } else {
+                retained_events.push(event);
+            }
+        }
+        self.events = retained_events;
+
+        SignalOwnerCleanup {
+            owner,
+            affected_signals,
+            invalidated_connections,
+            removed_events,
+        }
+    }
+
+    /// Clears all runtime signal state for world teardown.
+    pub fn clear_runtime_state(&mut self) {
+        self.signals.clear();
+        self.connections.clear();
+        self.events.clear();
+        self.next_signal_id = 0;
+        self.next_frame_sequence = 0;
+        self.next_fixed_step_sequence = 0;
+    }
+
     /// Returns connections in deterministic creation order.
     #[must_use]
     pub fn connections(&self) -> &[SignalConnection] {
@@ -300,6 +356,20 @@ impl SignalRegistry {
         };
         self.events.push(event);
         Ok(event)
+    }
+}
+
+fn event_matches_owner_cleanup(
+    event: &QueuedSignalEvent,
+    owner: SignalOwner,
+    affected_signals: &[SignalId],
+) -> bool {
+    if affected_signals.contains(&event.signal_id) {
+        return true;
+    }
+    match owner {
+        SignalOwner::Global => false,
+        SignalOwner::Instance(instance_id) => event.emitter == Some(instance_id),
     }
 }
 
