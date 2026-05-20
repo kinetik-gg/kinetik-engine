@@ -19,6 +19,8 @@ feature work.
   and frame flush integration.
 - `resource-database.md`: resource database over manifests and import cache
   contracts.
+- `resource-reference-validation.md`: mapping from reflected scene/property
+  asset references to resource database entries and diagnostics.
 - `mcp-command-surface.md`: editor-owned MCP command surface shape.
 
 ## Common Rules

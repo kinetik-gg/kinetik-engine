@@ -33,6 +33,21 @@ Required capabilities:
 The import cache is disposable and can be rebuilt from source assets and
 manifests.
 
+## Resource Reference Mapping
+
+Scene and property asset references use the mapping defined in
+`resource-reference-validation.md`.
+
+Durable references are `AssetGuid` plus `AssetPath`. The GUID is stable asset
+identity; the `res://` path is readable location and repair context.
+`ResourceId` and `ResourceHandle` are derived runtime/import/database handles
+after a durable reference resolves. They are not the source-of-truth identity for
+serialized scene/property asset references.
+
+Reference validation should resolve GUIDs through the committed manifest, compare
+stored paths with manifest paths, and emit structured diagnostics instead of
+silently replacing missing identity or stale paths.
+
 ## Dependency Boundaries
 
 - Importer dependencies follow `docs/dependency-proposals/asset-import.md`.
@@ -59,8 +74,10 @@ Resource diagnostics report:
 - Missing import output that can be rebuilt.
 - Importer version/settings mismatch.
 - Invalid scene/property resource reference.
+- GUID/path mismatch in a scene/property asset reference.
 
-Diagnostics include asset GUIDs and paths when available.
+Diagnostics include asset GUIDs, paths, scene instance identity, and reflected
+property paths when available.
 
 ## Public API Constraints
 
@@ -74,4 +91,5 @@ Diagnostics include asset GUIDs and paths when available.
 - M11 resource database scaffold.
 - M11 reference validation.
 - M11 missing/duplicate diagnostics.
+- Reflected asset-reference value shape and serialized-format review.
 - M28 texture/glTF import after approved dependency installation.

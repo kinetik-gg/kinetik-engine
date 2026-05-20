@@ -274,6 +274,7 @@ Key outputs:
 - Import cache state model and asset dependency lookup contract.
 
 Representative issues: resource database scaffold; reference validation;
+reflected asset-reference value shape; scene/property reference validation;
 missing/duplicate diagnostics; import cache state; dependency lookup.
 
 Implementation level: Level 2.
