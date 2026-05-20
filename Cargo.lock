@@ -34,6 +34,7 @@ dependencies = [
  "kinetik-core",
  "kinetik-reflect",
  "kinetik-scene",
+ "kinetik-script",
 ]
 
 [[package]]
