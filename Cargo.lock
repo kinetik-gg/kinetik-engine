@@ -516,6 +516,7 @@ dependencies = [
  "kinetik-core",
  "kinetik-project",
  "kinetik-reflect",
+ "kinetik-render",
  "kinetik-resource",
  "kinetik-scene",
  "winit",
