@@ -84,6 +84,8 @@ name = "kinetik-resource"
 version = "0.0.0"
 dependencies = [
  "kinetik-core",
+ "kinetik-reflect",
+ "kinetik-scene",
 ]
 
 [[package]]

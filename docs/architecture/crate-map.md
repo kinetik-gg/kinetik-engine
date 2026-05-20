@@ -10,7 +10,8 @@
 
 - `kinetik-scene`: instance hierarchy, transforms, and scene serialization contracts.
 - `kinetik-signal`: deterministic signal/event bus.
-- `kinetik-resource`: asset paths, handles, metadata, cache/import skeleton.
+- `kinetik-resource`: asset paths, handles, metadata, cache/import skeleton, and
+  resource reference validation over scene/reflection state.
 - `kinetik-script`: runtime-agnostic script lifecycle, attachment,
   diagnostics, provenance, and handle contracts.
 - `kinetik-script-luau`: Luau VM bridge and Luau-specific typed API generation

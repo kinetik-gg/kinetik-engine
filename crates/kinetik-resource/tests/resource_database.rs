@@ -1,10 +1,15 @@
 //! Resource database integration tests.
 
 use kinetik_core::DiagnosticBlockingScope;
+use kinetik_reflect::{
+    AssetReferenceValue, EditorHint, PropertyDefault, PropertyDescriptor, PropertyType,
+    PropertyValue,
+};
 use kinetik_resource::{
     AssetGuid, AssetManifest, AssetManifestEntry, AssetPath, AssetReference, ResourceDatabase,
     ResourceError,
 };
+use kinetik_scene::{InstanceClassDescriptor, InstanceClassRegistry, Scene, ROOT_CLASS_NAME};
 
 fn manifest_entry(raw_guid: u64, path: &str) -> AssetManifestEntry {
     AssetManifestEntry::from_parts(
@@ -15,6 +20,39 @@ fn manifest_entry(raw_guid: u64, path: &str) -> AssetManifestEntry {
         format!("hash-{raw_guid}"),
     )
     .unwrap()
+}
+
+fn asset_reference_value(raw_guid: u64, path: &str) -> PropertyValue {
+    PropertyValue::AssetReference(AssetReferenceValue::new(raw_guid, path).unwrap())
+}
+
+fn asset_property_descriptor(
+    path: &str,
+    default_guid: u64,
+    default_path: &str,
+) -> PropertyDescriptor {
+    PropertyDescriptor::new(path, path, PropertyType::AssetReference)
+        .unwrap()
+        .with_default_value(PropertyDefault::Value(asset_reference_value(
+            default_guid,
+            default_path,
+        )))
+        .with_editor_hint(EditorHint::AssetPicker)
+}
+
+fn scene_with_asset_node_class() -> Scene {
+    let mut registry = InstanceClassRegistry::with_default_scene_classes().unwrap();
+    registry
+        .register(
+            InstanceClassDescriptor::new("AssetNode", "Asset Node")
+                .unwrap()
+                .with_properties(vec![
+                    asset_property_descriptor("Material", 1, "res://assets/materials/base.knmat"),
+                    asset_property_descriptor("Texture", 2, "res://assets/textures/base.png"),
+                ]),
+        )
+        .unwrap();
+    Scene::with_class_registry(registry)
 }
 
 #[test]
@@ -157,6 +195,120 @@ fn resource_database_reports_raw_asset_reference_field_errors() {
     assert_eq!(
         invalid_path[0].location.asset_path.as_deref(),
         Some("assets/a.mesh")
+    );
+}
+
+#[test]
+fn resource_database_accepts_valid_scene_asset_references() {
+    let manifest = AssetManifest::from_entries(vec![
+        manifest_entry(1, "res://assets/materials/base.knmat"),
+        manifest_entry(2, "res://assets/textures/base.png"),
+    ])
+    .unwrap();
+    let database = ResourceDatabase::from_manifest(manifest);
+    let mut scene = scene_with_asset_node_class();
+    let root = scene.add_root(ROOT_CLASS_NAME, ROOT_CLASS_NAME).unwrap();
+    scene.add_child(root, "AssetNode", "Mesh").unwrap();
+
+    assert!(database
+        .scene_asset_reference_diagnostics(&scene)
+        .is_empty());
+}
+
+#[test]
+fn resource_database_reports_scene_asset_reference_context_in_stable_order() {
+    let manifest = AssetManifest::from_entries(vec![
+        manifest_entry(1, "res://assets/materials/current.knmat"),
+        manifest_entry(2, "res://assets/textures/base.png"),
+    ])
+    .unwrap();
+    let database = ResourceDatabase::from_manifest(manifest);
+    let mut scene = scene_with_asset_node_class();
+    let root = scene.add_root(ROOT_CLASS_NAME, ROOT_CLASS_NAME).unwrap();
+    let first = scene.add_child(root, "AssetNode", "First").unwrap();
+    let second = scene.add_child(root, "AssetNode", "Second").unwrap();
+    scene
+        .set_property(
+            first,
+            "Material",
+            asset_reference_value(99, "res://assets/materials/missing.knmat"),
+        )
+        .unwrap();
+    scene
+        .set_property(
+            second,
+            "Material",
+            asset_reference_value(1, "res://assets/materials/stale.knmat"),
+        )
+        .unwrap();
+
+    let diagnostics = database.scene_asset_reference_diagnostics(&scene);
+
+    assert_eq!(diagnostics.len(), 2);
+    assert_eq!(
+        diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.code)
+            .collect::<Vec<_>>(),
+        vec![
+            ResourceError::MISSING_ASSET_REFERENCE_CODE,
+            ResourceError::ASSET_REFERENCE_PATH_MISMATCH_CODE,
+        ]
+    );
+    assert_eq!(
+        diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.location.scene_path.as_deref())
+            .collect::<Vec<_>>(),
+        vec![Some("/Game/First"), Some("/Game/Second")]
+    );
+    assert_eq!(
+        diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.location.property_path.as_deref())
+            .collect::<Vec<_>>(),
+        vec![Some("Material"), Some("Material")]
+    );
+    assert!(diagnostics[0].location.instance_guid.is_some());
+    assert_eq!(
+        diagnostics[0].location.asset_path.as_deref(),
+        Some("res://assets/materials/missing.knmat")
+    );
+    assert!(diagnostics[0].message.contains("AssetGuid(99)"));
+    assert!(diagnostics[1]
+        .message
+        .contains("res://assets/materials/current.knmat"));
+}
+
+#[test]
+fn resource_database_reports_scene_asset_references_in_property_order() {
+    let database = ResourceDatabase::new();
+    let mut scene = scene_with_asset_node_class();
+    let root = scene.add_root(ROOT_CLASS_NAME, ROOT_CLASS_NAME).unwrap();
+    let node = scene.add_child(root, "AssetNode", "Mesh").unwrap();
+    scene
+        .set_property(
+            node,
+            "Texture",
+            asset_reference_value(20, "res://assets/textures/missing.png"),
+        )
+        .unwrap();
+    scene
+        .set_property(
+            node,
+            "Material",
+            asset_reference_value(10, "res://assets/materials/missing.knmat"),
+        )
+        .unwrap();
+
+    let diagnostics = database.scene_asset_reference_diagnostics(&scene);
+
+    assert_eq!(
+        diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.location.property_path.as_deref())
+            .collect::<Vec<_>>(),
+        vec![Some("Material"), Some("Texture")]
     );
 }
 
