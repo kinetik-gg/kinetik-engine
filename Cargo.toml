@@ -24,7 +24,7 @@ resolver = "2"
 [workspace.package]
 edition = "2021"
 license = "Apache-2.0 OR MIT"
-repository = "https://example.invalid/kinetik"
+repository = "https://github.com/kinetik-gg/kinetik-engine"
 rust-version = "1.80"
 
 [workspace.lints.rust]
