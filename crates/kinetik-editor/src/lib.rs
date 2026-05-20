@@ -1,9 +1,11 @@
 //! editor scaffold for Kinetik.
 
+mod explorer;
 mod mcp;
 mod session;
 mod shell;
 
+pub use explorer::{ExplorerRow, ExplorerSnapshot};
 pub use mcp::{
     diagnostics_list_response, dirty_state_response, project_status_response,
     resource_manifest_response, scene_hierarchy_response, DiagnosticSummary, DirtyStateResponse,
@@ -13,7 +15,7 @@ pub use mcp::{
 };
 pub use session::{
     DiagnosticPanelItem, DiagnosticsPanelState, EditorDocumentSelection, EditorFocus,
-    EditorModeState, EditorSelection, EditorSession, EditorSessionProject,
+    EditorModeState, EditorSelection, EditorSession, EditorSessionProject, ExplorerCommandError,
 };
 pub use shell::{
     default_editor_shell_layout, run_editor_shell, EditorPanel, EditorShellError,

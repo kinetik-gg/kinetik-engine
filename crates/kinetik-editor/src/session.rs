@@ -1,13 +1,19 @@
 //! Editor document-session state for Kinetik Studio.
 
-use kinetik_command::{CommandHistory, DirtyStateExplanation};
+use std::fmt;
+
+use kinetik_command::{
+    create_scene_child_instance, delete_scene_instance, duplicate_scene_instance,
+    rename_scene_instance, reparent_scene_instance, CommandError, CommandHistory,
+    DirtyStateExplanation, UndoRedoRecord,
+};
 use kinetik_core::{
     Diagnostic, DiagnosticBlockingScope, DiagnosticSeverity, InstanceGuid, InstanceId,
 };
 use kinetik_project::ProjectModel;
 use kinetik_scene::{Scene, SceneResult};
 
-use crate::EditorPanel;
+use crate::{EditorPanel, ExplorerSnapshot};
 
 /// Lightweight project/session view exposed by the editor session.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -263,6 +269,35 @@ pub struct EditorSession {
     mode: EditorModeState,
 }
 
+/// Error returned by command-backed Explorer actions.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExplorerCommandError {
+    /// No project/scene is open in the editor session.
+    NoActiveScene,
+    /// Existing command validation rejected the action.
+    Command(CommandError),
+    /// Scene hierarchy projection failed after mutation.
+    Scene(String),
+}
+
+impl fmt::Display for ExplorerCommandError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoActiveScene => formatter.write_str("no active scene is open"),
+            Self::Command(error) => write!(formatter, "{error}"),
+            Self::Scene(error) => formatter.write_str(error),
+        }
+    }
+}
+
+impl std::error::Error for ExplorerCommandError {}
+
+impl From<CommandError> for ExplorerCommandError {
+    fn from(error: CommandError) -> Self {
+        Self::Command(error)
+    }
+}
+
 impl EditorSession {
     /// Creates a closed editor session.
     #[must_use]
@@ -322,6 +357,21 @@ impl EditorSession {
         self.active_scene.as_mut()
     }
 
+    /// Returns an Explorer snapshot for the active scene.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ExplorerCommandError`] when no scene is open or hierarchy
+    /// projection fails.
+    pub fn explorer_snapshot(&self) -> Result<ExplorerSnapshot, ExplorerCommandError> {
+        let scene = self
+            .active_scene
+            .as_ref()
+            .ok_or(ExplorerCommandError::NoActiveScene)?;
+        ExplorerSnapshot::from_scene(scene)
+            .map_err(|error| ExplorerCommandError::Scene(error.to_string()))
+    }
+
     /// Returns current selection and focus state.
     #[must_use]
     pub const fn selection(&self) -> &EditorSelection {
@@ -344,6 +394,135 @@ impl EditorSession {
     #[must_use]
     pub fn command_history_mut(&mut self) -> &mut CommandHistory {
         &mut self.command_history
+    }
+
+    /// Creates a child instance through the shared scene command path.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ExplorerCommandError`] when no scene is open, validation fails,
+    /// or selection cannot be updated after mutation.
+    pub fn explorer_create_child(
+        &mut self,
+        parent_id: InstanceId,
+        class_name: impl Into<String>,
+        name: impl Into<String>,
+    ) -> Result<InstanceId, ExplorerCommandError> {
+        let document_path = self.active_scene_document_path()?;
+        let result = create_scene_child_instance(
+            self.active_scene_mut_or_error()?,
+            parent_id,
+            class_name,
+            name,
+            document_path,
+        )?;
+        self.commit_explorer_command("Create Instance", &result.command)?;
+        self.select_active_scene_instance(result.instance_id)?;
+        Ok(result.instance_id)
+    }
+
+    /// Deletes a scene instance through the shared scene command path.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ExplorerCommandError`] when no scene is open or validation
+    /// fails.
+    pub fn explorer_delete(
+        &mut self,
+        instance_id: InstanceId,
+    ) -> Result<Vec<InstanceId>, ExplorerCommandError> {
+        let document_path = self.active_scene_document_path()?;
+        let result = delete_scene_instance(
+            self.active_scene_mut_or_error()?,
+            instance_id,
+            document_path,
+        )?;
+        self.commit_explorer_command("Delete Instance", &result.command)?;
+        if self.selection_references_any(&result.deleted_ids) {
+            self.selection.clear();
+        }
+        Ok(result.deleted_ids)
+    }
+
+    /// Renames a scene instance through the shared scene command path.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ExplorerCommandError`] when no scene is open, validation fails,
+    /// or selection cannot be refreshed after mutation.
+    pub fn explorer_rename(
+        &mut self,
+        instance_id: InstanceId,
+        new_name: impl Into<String>,
+    ) -> Result<(), ExplorerCommandError> {
+        let document_path = self.active_scene_document_path()?;
+        let command = rename_scene_instance(
+            self.active_scene_mut_or_error()?,
+            instance_id,
+            new_name,
+            document_path,
+        )?;
+        self.commit_explorer_command("Rename Instance", &command)?;
+        self.refresh_selection_if_selected(instance_id)?;
+        Ok(())
+    }
+
+    /// Duplicates a scene instance through the shared scene command path.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ExplorerCommandError`] when no scene is open, validation fails,
+    /// or selection cannot be updated after mutation.
+    pub fn explorer_duplicate(
+        &mut self,
+        instance_id: InstanceId,
+        new_parent: InstanceId,
+    ) -> Result<InstanceId, ExplorerCommandError> {
+        let document_path = self.active_scene_document_path()?;
+        let result = duplicate_scene_instance(
+            self.active_scene_mut_or_error()?,
+            instance_id,
+            new_parent,
+            document_path,
+        )?;
+        self.commit_explorer_command("Duplicate Instance", &result.command)?;
+        self.select_active_scene_instance(result.new_root_id)?;
+        Ok(result.new_root_id)
+    }
+
+    /// Reparents a scene instance through the shared scene command path.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ExplorerCommandError`] when no scene is open, validation fails,
+    /// or selection cannot be refreshed after mutation.
+    pub fn explorer_reparent(
+        &mut self,
+        instance_id: InstanceId,
+        new_parent: InstanceId,
+    ) -> Result<(), ExplorerCommandError> {
+        let document_path = self.active_scene_document_path()?;
+        let result = reparent_scene_instance(
+            self.active_scene_mut_or_error()?,
+            instance_id,
+            new_parent,
+            document_path,
+        )?;
+        self.commit_explorer_command("Reparent Instance", &result.command)?;
+        self.refresh_selection_if_selected(result.instance_id)?;
+        Ok(())
+    }
+
+    /// Moves the latest Explorer command record to the redo stack.
+    #[must_use]
+    pub fn explorer_undo_stack_move(&mut self) -> Option<UndoRedoRecord> {
+        self.command_history.pop_undo()
+    }
+
+    /// Moves the latest Explorer redo record back to the undo stack.
+    #[must_use]
+    pub fn explorer_redo_stack_move(&mut self) -> Option<UndoRedoRecord> {
+        self.command_history.pop_redo()
     }
 
     /// Returns dirty-state explanation derived from command history.
@@ -387,164 +566,64 @@ impl EditorSession {
     pub fn stop_play_mode(&mut self) {
         self.mode = EditorModeState::Edit;
     }
+
+    fn active_scene_document_path(&self) -> Result<String, ExplorerCommandError> {
+        let project = self
+            .project
+            .as_ref()
+            .ok_or(ExplorerCommandError::NoActiveScene)?;
+        Ok(project.documents().active_scene().to_owned())
+    }
+
+    fn active_scene_mut_or_error(&mut self) -> Result<&mut Scene, ExplorerCommandError> {
+        self.active_scene
+            .as_mut()
+            .ok_or(ExplorerCommandError::NoActiveScene)
+    }
+
+    fn commit_explorer_command(
+        &mut self,
+        summary: &str,
+        command: &kinetik_command::CommandResult,
+    ) -> Result<(), ExplorerCommandError> {
+        self.command_history
+            .commit_result(summary, command)
+            .map_err(ExplorerCommandError::Command)?;
+        Ok(())
+    }
+
+    fn select_active_scene_instance(&mut self, id: InstanceId) -> Result<(), ExplorerCommandError> {
+        let scene = self
+            .active_scene
+            .as_ref()
+            .ok_or(ExplorerCommandError::NoActiveScene)?;
+        self.selection
+            .select_scene_instance(scene, id)
+            .map_err(|error| ExplorerCommandError::Scene(error.to_string()))
+    }
+
+    fn refresh_selection_if_selected(
+        &mut self,
+        id: InstanceId,
+    ) -> Result<(), ExplorerCommandError> {
+        if matches!(
+            self.selection.document(),
+            EditorDocumentSelection::SceneInstance { id: selected, .. } if *selected == id
+        ) {
+            self.select_active_scene_instance(id)?;
+        }
+        Ok(())
+    }
+
+    fn selection_references_any(&self, ids: &[InstanceId]) -> bool {
+        match self.selection.document() {
+            EditorDocumentSelection::SceneInstance { id, .. } => ids.contains(id),
+            EditorDocumentSelection::None | EditorDocumentSelection::ProjectDocument { .. } => {
+                false
+            }
+        }
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use kinetik_command::create_scene_child_instance;
-    use kinetik_core::{DiagnosticCode, DiagnosticSource};
-    use kinetik_project::{ProjectDocumentRefs, ProjectIdentity, ProjectSettingsDocument};
-
-    use super::*;
-
-    fn demo_project() -> ProjectModel {
-        ProjectModel::new(
-            ProjectSettingsDocument::new(
-                ProjectIdentity::new("Demo", "0.1").expect("valid identity"),
-            ),
-            ProjectDocumentRefs::default(),
-        )
-    }
-
-    #[test]
-    fn session_opens_project_and_active_scene_without_editor_state_in_project() {
-        let mut session = EditorSession::new();
-        session.open_project(
-            demo_project(),
-            Scene::default_scene().expect("valid default scene"),
-        );
-
-        let summary = session.project_summary().expect("open project");
-        assert!(session.is_open());
-        assert_eq!(summary.project_name(), "Demo");
-        assert_eq!(summary.engine_compatibility(), "0.1");
-        assert_eq!(summary.active_scene_path(), "scenes/main.knscene");
-        assert_eq!(session.mode(), EditorModeState::Edit);
-        assert!(matches!(
-            session.selection().document(),
-            EditorDocumentSelection::None
-        ));
-    }
-
-    #[test]
-    fn session_close_clears_editor_owned_state() {
-        let mut session = EditorSession::new();
-        session.open_project(
-            demo_project(),
-            Scene::default_scene().expect("valid default scene"),
-        );
-        session.selection_mut().focus_panel(EditorPanel::Explorer);
-        session.replace_session_diagnostics([Diagnostic::new(
-            DiagnosticCode::new("KT_TEST"),
-            DiagnosticSeverity::Warning,
-            DiagnosticSource::new("Test"),
-            "warning",
-        )]);
-        session.enter_play_mode();
-
-        session.close_project();
-
-        assert!(!session.is_open());
-        assert!(session.active_scene().is_none());
-        assert_eq!(session.mode(), EditorModeState::Edit);
-        assert!(session.diagnostics_panel().is_empty());
-        assert!(matches!(
-            session.selection().document(),
-            EditorDocumentSelection::None
-        ));
-    }
-
-    #[test]
-    fn selection_tracks_scene_instance_identity_and_path() {
-        let scene = Scene::default_scene().expect("valid default scene");
-        let workspace = scene.get_by_path("/Game/Workspace").unwrap();
-        let mut selection = EditorSelection::new();
-
-        selection
-            .select_scene_instance(&scene, workspace.id)
-            .expect("select workspace");
-        selection.focus_panel(EditorPanel::Explorer);
-
-        assert_eq!(selection.focus().panel(), Some(EditorPanel::Explorer));
-        assert_eq!(
-            selection.document(),
-            &EditorDocumentSelection::SceneInstance {
-                id: workspace.id,
-                guid: workspace.guid,
-                scene_path: "/Game/Workspace".to_owned(),
-            }
-        );
-    }
-
-    #[test]
-    fn dirty_state_is_derived_from_command_history() {
-        let mut session = EditorSession::new();
-        session.open_project(
-            demo_project(),
-            Scene::default_scene().expect("valid default scene"),
-        );
-        let scene = session.active_scene_mut().expect("active scene");
-        let workspace = scene.get_by_path("/Game/Workspace").unwrap().id;
-        let command =
-            create_scene_child_instance(scene, workspace, "Part", "Block", "scenes/main.knscene")
-                .expect("create block");
-        session
-            .command_history_mut()
-            .commit_result("Create Block", &command.command)
-            .expect("commit")
-            .expect("undo record");
-
-        let dirty = session.dirty_state();
-
-        assert!(!dirty.is_clean());
-        assert_eq!(dirty.documents()[0].document_path(), "scenes/main.knscene");
-        assert_eq!(
-            dirty.changes()[0].change_summary(),
-            "created /Game/Workspace/Block"
-        );
-    }
-
-    #[test]
-    fn diagnostics_panel_projects_session_diagnostics_in_order() {
-        let mut session = EditorSession::new();
-        session.open_project(
-            demo_project(),
-            Scene::default_scene().expect("valid default scene"),
-        );
-        session.replace_session_diagnostics([
-            Diagnostic::new(
-                DiagnosticCode::new("KT_FIRST"),
-                DiagnosticSeverity::Info,
-                DiagnosticSource::new("Test"),
-                "first",
-            ),
-            Diagnostic::new(
-                DiagnosticCode::new("KT_SECOND"),
-                DiagnosticSeverity::Error,
-                DiagnosticSource::new("Test"),
-                "second",
-            )
-            .with_blocking_scope(DiagnosticBlockingScope::Save),
-        ]);
-
-        let panel = session.diagnostics_panel();
-
-        assert_eq!(panel.items()[0].code, "KT_FIRST");
-        assert_eq!(panel.items()[1].code, "KT_SECOND");
-        assert_eq!(
-            panel.items()[1].blocking,
-            Some(DiagnosticBlockingScope::Save)
-        );
-    }
-
-    #[test]
-    fn mode_state_tracks_play_ownership_without_runtime_world() {
-        let mut session = EditorSession::new();
-
-        assert_eq!(session.mode(), EditorModeState::Edit);
-        session.enter_play_mode();
-        assert_eq!(session.mode(), EditorModeState::Play);
-        session.stop_play_mode();
-        assert_eq!(session.mode(), EditorModeState::Edit);
-    }
-}
+mod tests;
