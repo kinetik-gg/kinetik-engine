@@ -28,23 +28,22 @@ must not be serialized as the source-of-truth scene/property asset reference.
 
 ## Property Mapping
 
-Reflected properties that point at assets should use a Kinetik-owned
-asset-reference value carrying:
+Reflected properties that point at assets use
+`PropertyValue::AssetReference(AssetReferenceValue)` carrying:
 
 - `AssetGuid`.
 - `AssetPath`.
 - Optional expected asset kind or descriptor constraint when the property schema
   needs one, such as material, mesh, prefab, texture, or script.
 
-The exact reflected value and serialized representation are follow-up work. That
-implementation must preserve ADR 0005 by storing GUID-backed references with
-readable paths and must not expose importer/parser types.
+The exact serialized representation is follow-up work. That implementation must
+preserve ADR 0005 by storing GUID-backed references with readable paths and must
+not expose importer/parser types.
 
 Existing `PropertyValue::ResourceId` represents a derived resource handle value,
-not the durable scene/source reference contract for asset properties. Future
-implementation may keep it for runtime-only values, replace it for serialized
-asset references, or add a separate reflected asset-reference value through a
-focused public API and serialized-format review.
+not the durable scene/source reference contract for asset properties. Use
+`PropertyValue::AssetReference` for serialized asset-reference intent unless a
+future serialized-format review decides otherwise.
 
 ## Validation Behavior
 
@@ -88,8 +87,8 @@ as updating a stale readable path to the manifest path for the same GUID.
 
 ## Acceptance Criteria For Implementation
 
-- Add a Kinetik-owned reflected asset-reference value or equivalent approved
-  public type instead of using parser/importer types.
+- Use `PropertyValue::AssetReference` instead of parser/importer types or
+  derived runtime/import handles for asset-reference intent.
 - Validate scene/property asset references through `ResourceDatabase` using
   deterministic traversal order.
 - Preserve GUID-backed identity and readable `res://` paths.

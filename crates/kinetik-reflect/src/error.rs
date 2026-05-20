@@ -94,6 +94,20 @@ pub enum ValueError {
         /// Reflected type without a neutral default.
         value_type: PropertyType,
     },
+    /// Asset reference GUID was zero.
+    InvalidAssetReferenceGuid {
+        /// Invalid raw GUID value.
+        raw: u64,
+    },
+    /// Asset reference path was empty.
+    EmptyAssetReferencePath,
+    /// Asset reference path violated the `res://` contract.
+    InvalidAssetReferencePath {
+        /// Invalid path value.
+        path: String,
+        /// Stable explanation for the validation failure.
+        reason: &'static str,
+    },
     /// Value type did not match the descriptor type.
     TypeMismatch {
         /// Canonical property path.
@@ -117,12 +131,19 @@ impl ValueError {
     /// Stable diagnostic code for reflected value type mismatches.
     pub const TYPE_MISMATCH_CODE: DiagnosticCode = DiagnosticCode::new("KT_REFLECT_TYPE_MISMATCH");
 
+    /// Stable diagnostic code for invalid reflected asset references.
+    pub const INVALID_ASSET_REFERENCE_CODE: DiagnosticCode =
+        DiagnosticCode::new("KT_REFLECT_INVALID_ASSET_REFERENCE");
+
     /// Returns the stable diagnostic code for this value error.
     #[must_use]
     pub const fn diagnostic_code(&self) -> DiagnosticCode {
         match self {
             Self::InvalidDescriptor(_) => Self::INVALID_DESCRIPTOR_CODE,
             Self::NoTypeDefault { .. } => Self::NO_TYPE_DEFAULT_CODE,
+            Self::InvalidAssetReferenceGuid { .. }
+            | Self::EmptyAssetReferencePath
+            | Self::InvalidAssetReferencePath { .. } => Self::INVALID_ASSET_REFERENCE_CODE,
             Self::TypeMismatch { .. } => Self::TYPE_MISMATCH_CODE,
         }
     }
@@ -131,8 +152,12 @@ impl ValueError {
     #[must_use]
     pub fn to_diagnostic(&self) -> Diagnostic {
         let mut location = DiagnosticLocation::new();
-        if let Self::TypeMismatch { path, .. } = self {
-            location.property_path = Some(path.clone());
+        match self {
+            Self::TypeMismatch { path, .. } => location.property_path = Some(path.clone()),
+            Self::InvalidAssetReferencePath { path, .. } => {
+                location.asset_path = Some(path.clone());
+            }
+            _ => {}
         }
         Diagnostic::new(
             self.diagnostic_code(),
@@ -150,6 +175,13 @@ impl fmt::Display for ValueError {
             Self::InvalidDescriptor(error) => write!(f, "invalid property descriptor: {error}"),
             Self::NoTypeDefault { value_type } => {
                 write!(f, "reflected type has no neutral default: {value_type}")
+            }
+            Self::InvalidAssetReferenceGuid { raw } => {
+                write!(f, "asset reference GUID must be non-zero: {raw}")
+            }
+            Self::EmptyAssetReferencePath => f.write_str("asset reference path must not be empty"),
+            Self::InvalidAssetReferencePath { path, reason } => {
+                write!(f, "asset reference path is invalid: {path} ({reason})")
             }
             Self::TypeMismatch {
                 path,

@@ -1,4 +1,4 @@
-use core::fmt;
+use core::{fmt, num::NonZeroU64};
 
 use kinetik_core::{Aabb, Color, InstanceId, Quat, Rect, ResourceId, Transform, Vec2, Vec3, Vec4};
 
@@ -33,6 +33,8 @@ pub enum PropertyType {
     InstanceId,
     /// Runtime resource handle.
     ResourceId,
+    /// Durable source asset reference.
+    AssetReference,
 }
 
 impl fmt::Display for PropertyType {
@@ -51,8 +53,58 @@ impl fmt::Display for PropertyType {
             Self::Aabb => "Aabb",
             Self::InstanceId => "InstanceId",
             Self::ResourceId => "ResourceId",
+            Self::AssetReference => "AssetReference",
         };
         f.write_str(type_name)
+    }
+}
+
+/// Reflected durable source asset reference.
+///
+/// This mirrors the engine resource contract of stable GUID plus readable
+/// `res://` path without making reflection depend on the resource crate.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AssetReferenceValue {
+    guid: NonZeroU64,
+    path: String,
+}
+
+impl AssetReferenceValue {
+    /// Required project asset path scheme.
+    pub const PATH_SCHEME: &'static str = "res://";
+
+    /// Creates a reflected asset reference from durable identity and readable path.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ValueError`] when the GUID is zero or the path is malformed.
+    pub fn new(guid: u64, path: impl Into<String>) -> ValueResult<Self> {
+        let guid =
+            NonZeroU64::new(guid).ok_or(ValueError::InvalidAssetReferenceGuid { raw: guid })?;
+        let path = path.into();
+        validate_asset_reference_path(&path)?;
+        Ok(Self { guid, path })
+    }
+
+    /// Returns the stable asset identity raw value.
+    #[must_use]
+    pub const fn guid(&self) -> u64 {
+        self.guid.get()
+    }
+
+    /// Returns the readable `res://` project asset path.
+    #[must_use]
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// Returns a copy of this reference with a new validated path.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ValueError`] when the path is malformed.
+    pub fn with_path(&self, path: impl Into<String>) -> ValueResult<Self> {
+        Self::new(self.guid(), path)
     }
 }
 
@@ -85,6 +137,8 @@ pub enum PropertyValue {
     InstanceId(InstanceId),
     /// Runtime resource handle.
     ResourceId(ResourceId),
+    /// Durable source asset reference.
+    AssetReference(AssetReferenceValue),
 }
 
 impl PropertyValue {
@@ -107,7 +161,7 @@ impl PropertyValue {
             PropertyType::Transform => Self::Transform(Transform::default()),
             PropertyType::Rect => Self::Rect(Rect::default()),
             PropertyType::Aabb => Self::Aabb(Aabb::default()),
-            PropertyType::InstanceId | PropertyType::ResourceId => {
+            PropertyType::InstanceId | PropertyType::ResourceId | PropertyType::AssetReference => {
                 return Err(ValueError::NoTypeDefault { value_type });
             }
         };
@@ -131,6 +185,7 @@ impl PropertyValue {
             Self::Aabb(_) => PropertyType::Aabb,
             Self::InstanceId(_) => PropertyType::InstanceId,
             Self::ResourceId(_) => PropertyType::ResourceId,
+            Self::AssetReference(_) => PropertyType::AssetReference,
         }
     }
 
@@ -158,5 +213,66 @@ impl PropertyValue {
             expected: descriptor.value_type,
             actual: self.property_type(),
         })
+    }
+}
+
+fn validate_asset_reference_path(path: &str) -> ValueResult<()> {
+    if path.is_empty() {
+        return Err(ValueError::EmptyAssetReferencePath);
+    }
+    if path.trim() != path {
+        return Err(invalid_asset_reference_path(
+            path,
+            "must not contain leading or trailing whitespace",
+        ));
+    }
+    let Some(relative_path) = path.strip_prefix(AssetReferenceValue::PATH_SCHEME) else {
+        return Err(invalid_asset_reference_path(path, "must start with res://"));
+    };
+    if relative_path.is_empty() {
+        return Err(invalid_asset_reference_path(
+            path,
+            "must include a project-relative path after res://",
+        ));
+    }
+    if relative_path.starts_with('/') {
+        return Err(invalid_asset_reference_path(
+            path,
+            "must not contain an absolute path after res://",
+        ));
+    }
+    if relative_path.contains('\\') {
+        return Err(invalid_asset_reference_path(
+            path,
+            "must use '/' separators, not backslashes",
+        ));
+    }
+    for segment in relative_path.split('/') {
+        if segment.is_empty() {
+            return Err(invalid_asset_reference_path(
+                path,
+                "must not contain empty path segments",
+            ));
+        }
+        if matches!(segment, "." | "..") {
+            return Err(invalid_asset_reference_path(
+                path,
+                "must not contain relative path segments",
+            ));
+        }
+        if segment.trim() != segment {
+            return Err(invalid_asset_reference_path(
+                path,
+                "path segments must not contain leading or trailing whitespace",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn invalid_asset_reference_path(path: &str, reason: &'static str) -> ValueError {
+    ValueError::InvalidAssetReferencePath {
+        path: path.to_owned(),
+        reason,
     }
 }
