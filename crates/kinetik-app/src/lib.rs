@@ -7,7 +7,7 @@ mod runtime_world;
 pub use diagnostics::{
     RuntimeAttribution, RuntimeDiagnosticRecord, RuntimeLogLevel, RuntimeLogRecord,
 };
-pub use frame::{FramePhase, FrameScheduler, FrameStepRecord, FrameStepResult};
+pub use frame::{FramePhase, FrameScheduler, FrameSignalFlush, FrameStepRecord, FrameStepResult};
 pub use runtime_world::{
     RuntimeInstanceId, RuntimeInstanceRecord, RuntimeWorld, RuntimeWorldError, RuntimeWorldId,
     RuntimeWorldResult,

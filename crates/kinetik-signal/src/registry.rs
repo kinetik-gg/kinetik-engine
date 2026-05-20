@@ -229,6 +229,16 @@ impl SignalRegistry {
         drained
     }
 
+    /// Returns delivery records for `flush_domain` and drains those events.
+    ///
+    /// Records are created before events are drained, preserving deterministic
+    /// event and connection order for the frame phase that requested the flush.
+    pub fn flush_events(&mut self, flush_domain: SignalFlushDomain) -> Vec<SignalDeliveryRecord> {
+        let records = self.delivery_records(flush_domain);
+        self.drain_events(flush_domain);
+        records
+    }
+
     /// Returns connections in deterministic creation order.
     #[must_use]
     pub fn connections(&self) -> &[SignalConnection] {

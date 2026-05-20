@@ -284,3 +284,45 @@ fn drain_events_filters_by_flush_domain() {
     );
     assert!(registry.events().is_empty());
 }
+
+#[test]
+fn flush_events_delivers_then_drains_selected_domain() {
+    let mut registry = SignalRegistry::default();
+    let frame_signal = registry.register("Touched").unwrap();
+    let fixed_signal = registry
+        .register_with_owner(
+            SignalOwner::Global,
+            "PhysicsTouched",
+            SignalFlushDomain::FixedStep,
+        )
+        .unwrap();
+    let frame_connection = registry.connect(frame_signal).unwrap();
+    let fixed_connection = registry.connect(fixed_signal).unwrap();
+    let frame_event = registry
+        .queue_frame_event(frame_signal, 7, None, None)
+        .unwrap();
+    let fixed_event = registry
+        .queue_fixed_step_event(fixed_signal, 7, 2, None, None)
+        .unwrap();
+
+    let records = registry.flush_events(SignalFlushDomain::FixedStep);
+
+    assert_eq!(
+        records,
+        vec![SignalDeliveryRecord {
+            event: fixed_event,
+            connection_id: fixed_connection,
+            connection_order: 2,
+        }]
+    );
+    assert_eq!(registry.events(), &[frame_event]);
+    assert_eq!(
+        registry.flush_events(SignalFlushDomain::Frame),
+        vec![SignalDeliveryRecord {
+            event: frame_event,
+            connection_id: frame_connection,
+            connection_order: 1,
+        }]
+    );
+    assert!(registry.events().is_empty());
+}
