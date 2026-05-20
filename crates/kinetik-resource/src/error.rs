@@ -44,6 +44,11 @@ pub enum ResourceError {
         /// Invalid field value.
         value: String,
     },
+    /// Import cache metadata contained more than one record for the same asset.
+    DuplicateImportCacheAsset {
+        /// Duplicate stable asset identity.
+        guid: AssetGuid,
+    },
     /// Manifest entry source asset was not present in observed project state.
     MissingSourceAsset {
         /// Missing stable asset identity.
@@ -91,6 +96,10 @@ impl ResourceError {
     pub const INVALID_IMPORTER_METADATA_CODE: DiagnosticCode =
         DiagnosticCode::new("KT_RESOURCE_INVALID_IMPORTER_METADATA");
 
+    /// Stable diagnostic code for duplicate import cache records.
+    pub const DUPLICATE_IMPORT_CACHE_RECORD_CODE: DiagnosticCode =
+        DiagnosticCode::new("KT_RESOURCE_DUPLICATE_IMPORT_CACHE_RECORD");
+
     /// Stable diagnostic code for missing source assets.
     pub const MISSING_SOURCE_ASSET_CODE: DiagnosticCode =
         DiagnosticCode::new("KT_RESOURCE_MISSING_SOURCE_ASSET");
@@ -120,6 +129,7 @@ impl ResourceError {
                 Self::DUPLICATE_ASSET_ENTRY_CODE
             }
             Self::InvalidImporterMetadata { .. } => Self::INVALID_IMPORTER_METADATA_CODE,
+            Self::DuplicateImportCacheAsset { .. } => Self::DUPLICATE_IMPORT_CACHE_RECORD_CODE,
             Self::MissingSourceAsset { .. } => Self::MISSING_SOURCE_ASSET_CODE,
             Self::MissingAssetReference { .. } => Self::MISSING_ASSET_REFERENCE_CODE,
             Self::AssetReferencePathMismatch { .. } => Self::ASSET_REFERENCE_PATH_MISMATCH_CODE,
@@ -179,6 +189,9 @@ impl fmt::Display for ResourceError {
             }
             Self::InvalidImporterMetadata { field, value } => {
                 write!(f, "asset manifest importer {field} is invalid: {value}")
+            }
+            Self::DuplicateImportCacheAsset { guid } => {
+                write!(f, "import cache contains duplicate record for {guid}")
             }
             Self::MissingSourceAsset { guid, path } => {
                 write!(f, "source asset is missing for {guid} at {path}")

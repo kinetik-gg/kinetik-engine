@@ -6,13 +6,15 @@ use kinetik_scene::Scene;
 
 use crate::ResourceError;
 use crate::{
-    AssetGuid, AssetManifest, AssetManifestEntry, AssetPath, AssetReference, ResourceResult,
+    AssetGuid, AssetManifest, AssetManifestEntry, AssetPath, AssetReference, ImportCacheRecord,
+    ResourceResult,
 };
 
 /// Engine-owned resource database over committed project manifests.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ResourceDatabase {
     manifest: AssetManifest,
+    import_cache_records: Vec<ImportCacheRecord>,
 }
 
 impl ResourceDatabase {
@@ -21,13 +23,48 @@ impl ResourceDatabase {
     pub const fn new() -> Self {
         Self {
             manifest: AssetManifest::new(),
+            import_cache_records: Vec::new(),
         }
     }
 
     /// Creates a resource database from a validated asset manifest.
     #[must_use]
     pub const fn from_manifest(manifest: AssetManifest) -> Self {
-        Self { manifest }
+        Self {
+            manifest,
+            import_cache_records: Vec::new(),
+        }
+    }
+
+    /// Creates a resource database from a validated asset manifest and import cache metadata.
+    ///
+    /// Import cache records are sorted by asset GUID for deterministic lookup,
+    /// UI, MCP, tests, and bundle preparation. Generated cache outputs remain
+    /// disposable and are not loaded by this constructor.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResourceError::DuplicateImportCacheAsset`] when more than one
+    /// cache record exists for the same asset GUID.
+    pub fn from_manifest_and_import_cache_records(
+        manifest: AssetManifest,
+        mut import_cache_records: Vec<ImportCacheRecord>,
+    ) -> ResourceResult<Self> {
+        import_cache_records.sort_by_key(ImportCacheRecord::asset_guid);
+        for pair in import_cache_records.windows(2) {
+            let [previous, current] = pair else {
+                unreachable!("windows(2) always yields two entries");
+            };
+            if previous.asset_guid() == current.asset_guid() {
+                return Err(ResourceError::DuplicateImportCacheAsset {
+                    guid: current.asset_guid(),
+                });
+            }
+        }
+        Ok(Self {
+            manifest,
+            import_cache_records,
+        })
     }
 
     /// Returns the committed asset manifest backing this database.
@@ -42,10 +79,24 @@ impl ResourceDatabase {
         self.manifest.entries()
     }
 
+    /// Returns import cache metadata records in deterministic asset GUID order.
+    #[must_use]
+    pub fn import_cache_records(&self) -> &[ImportCacheRecord] {
+        &self.import_cache_records
+    }
+
     /// Looks up a database entry by stable asset GUID.
     #[must_use]
     pub fn get_by_guid(&self, guid: AssetGuid) -> Option<&AssetManifestEntry> {
         self.manifest.get_by_guid(guid)
+    }
+
+    /// Looks up import cache metadata by stable asset GUID.
+    #[must_use]
+    pub fn get_import_cache_by_guid(&self, guid: AssetGuid) -> Option<&ImportCacheRecord> {
+        self.import_cache_records
+            .iter()
+            .find(|record| record.asset_guid() == guid)
     }
 
     /// Looks up a database entry by validated `res://` project path.

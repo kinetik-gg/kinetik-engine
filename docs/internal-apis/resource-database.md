@@ -33,6 +33,13 @@ Required capabilities:
 The import cache is disposable and can be rebuilt from source assets and
 manifests.
 
+Import cache metadata held by `ResourceDatabase` is an index of
+`ImportCacheRecord` values keyed by asset GUID. It reports source content hash,
+importer ID/version, import settings hash, and cache schema version without
+loading generated outputs or invoking importers. Cache records are ordered
+deterministically by asset GUID and remain separate from committed manifest
+identity: a cache record does not create, repair, or replace a manifest entry.
+
 ## Resource Reference Mapping
 
 Scene and property asset references use the mapping defined in

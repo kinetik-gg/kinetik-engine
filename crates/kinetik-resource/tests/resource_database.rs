@@ -6,8 +6,9 @@ use kinetik_reflect::{
     PropertyValue,
 };
 use kinetik_resource::{
-    AssetGuid, AssetManifest, AssetManifestEntry, AssetPath, AssetReference, ResourceDatabase,
-    ResourceError,
+    AssetGuid, AssetManifest, AssetManifestEntry, AssetPath, AssetReference, ImportCacheRecord,
+    ImportCacheSchemaVersion, ImportSettingsHash, ResourceDatabase, ResourceError,
+    SourceContentHash,
 };
 use kinetik_scene::{InstanceClassDescriptor, InstanceClassRegistry, Scene, ROOT_CLASS_NAME};
 
@@ -18,6 +19,18 @@ fn manifest_entry(raw_guid: u64, path: &str) -> AssetManifestEntry {
         "kinetik.test",
         "1",
         format!("hash-{raw_guid}"),
+    )
+    .unwrap()
+}
+
+fn import_cache_record(raw_guid: u64) -> ImportCacheRecord {
+    ImportCacheRecord::new(
+        AssetGuid::new(raw_guid),
+        SourceContentHash::new(format!("source-hash-{raw_guid}")).unwrap(),
+        "kinetik.test",
+        "1",
+        ImportSettingsHash::new(format!("settings-hash-{raw_guid}")).unwrap(),
+        ImportCacheSchemaVersion::new(1),
     )
     .unwrap()
 }
@@ -98,6 +111,78 @@ fn resource_database_looks_up_entries_by_guid_and_path() {
         .get_by_res_path("res://assets/missing.mesh")
         .unwrap()
         .is_none());
+}
+
+#[test]
+fn resource_database_indexes_import_cache_records_by_guid() {
+    let manifest = AssetManifest::from_entries(vec![
+        manifest_entry(1, "res://assets/alpha.mesh"),
+        manifest_entry(2, "res://assets/mid.mesh"),
+    ])
+    .unwrap();
+    let database = ResourceDatabase::from_manifest_and_import_cache_records(
+        manifest,
+        vec![import_cache_record(2), import_cache_record(1)],
+    )
+    .unwrap();
+
+    assert_eq!(
+        database
+            .import_cache_records()
+            .iter()
+            .map(ImportCacheRecord::asset_guid)
+            .collect::<Vec<_>>(),
+        vec![AssetGuid::new(1), AssetGuid::new(2)]
+    );
+    assert_eq!(
+        database
+            .get_import_cache_by_guid(AssetGuid::new(2))
+            .unwrap()
+            .source_content_hash()
+            .as_str(),
+        "source-hash-2"
+    );
+    assert!(database
+        .get_import_cache_by_guid(AssetGuid::new(99))
+        .is_none());
+}
+
+#[test]
+fn resource_database_rejects_duplicate_import_cache_records() {
+    let error = ResourceDatabase::from_manifest_and_import_cache_records(
+        AssetManifest::new(),
+        vec![import_cache_record(7), import_cache_record(7)],
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error,
+        ResourceError::DuplicateImportCacheAsset {
+            guid: AssetGuid::new(7)
+        }
+    );
+    assert_eq!(
+        error.diagnostic_code(),
+        ResourceError::DUPLICATE_IMPORT_CACHE_RECORD_CODE
+    );
+}
+
+#[test]
+fn resource_database_keeps_manifest_and_import_cache_metadata_separate() {
+    let manifest =
+        AssetManifest::from_entries(vec![manifest_entry(1, "res://assets/alpha.mesh")]).unwrap();
+    let database = ResourceDatabase::from_manifest_and_import_cache_records(
+        manifest,
+        vec![import_cache_record(99)],
+    )
+    .unwrap();
+
+    assert!(database.get_by_guid(AssetGuid::new(99)).is_none());
+    assert!(database
+        .get_import_cache_by_guid(AssetGuid::new(99))
+        .is_some());
+    assert_eq!(database.entries().len(), 1);
+    assert_eq!(database.import_cache_records().len(), 1);
 }
 
 #[test]
