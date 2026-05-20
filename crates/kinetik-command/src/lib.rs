@@ -11,6 +11,7 @@ mod error;
 mod history;
 mod mode;
 mod result;
+mod scene;
 mod target_mode;
 
 pub use change::{ChangeTarget, CommandChangeRecord, PropertyValueChange};
@@ -19,6 +20,7 @@ pub use error::{CommandError, CommandModelResult};
 pub use history::{CommandHistory, UndoGroupId, UndoRedoRecord};
 pub use mode::{CommandStatus, CommandTargetMode};
 pub use result::CommandResult;
+pub use scene::{rename_scene_instance, RENAME_INSTANCE_COMMAND};
 pub use target_mode::{require_specific_target_mode, require_target_mode};
 
 pub(crate) use error::{validate_command_kind, validate_dirty_summary};
