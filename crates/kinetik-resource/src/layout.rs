@@ -156,7 +156,7 @@ const DEFAULT_PROJECT_LAYOUT_PATHS: [ProjectLayoutPath; 13] = [
     },
     ProjectLayoutPath {
         kind: ProjectPathKind::MainScene,
-        path: "scenes/main.ktscene",
+        path: "scenes/main.knscene",
         domain: ProjectPathDomain::Source,
     },
     ProjectLayoutPath {
@@ -181,12 +181,12 @@ const DEFAULT_PROJECT_LAYOUT_PATHS: [ProjectLayoutPath; 13] = [
     },
     ProjectLayoutPath {
         kind: ProjectPathKind::AssetsManifest,
-        path: "project/assets.ktmanifest",
+        path: "project/assets.knmanifest",
         domain: ProjectPathDomain::Source,
     },
     ProjectLayoutPath {
         kind: ProjectPathKind::InstancesManifest,
-        path: "project/instances.ktmanifest",
+        path: "project/instances.knmanifest",
         domain: ProjectPathDomain::Source,
     },
     ProjectLayoutPath {

@@ -2,6 +2,7 @@
 .kinetik/cache/
 .kinetik/imported/
 .kinetik/build/
+*.knbundle
 .DS_Store
 *.swp
 *.tmp

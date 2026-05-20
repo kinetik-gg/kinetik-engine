@@ -10,7 +10,7 @@ Kinetik is a marathon-scale game engine intended to be built by coordinated huma
 
 ## Decision
 
-Generated mountable .ktbundle content packages.
+Generated mountable .knbundle content packages.
 
 ## Consequences
 

@@ -18,7 +18,7 @@
 - `kinetik-audio`: buses, playback, spatial audio abstractions.
 - `kinetik-ui`: runtime UI model.
 - `kinetik-terrain`: terrain data, chunks, tools-facing APIs.
-- `kinetik-bundle`: build/load/verify `.ktbundle` packages.
+- `kinetik-bundle`: build/load/verify `.knbundle` packages.
 - `kinetik-app`: runtime app loop and subsystem orchestration.
 
 ## Editor

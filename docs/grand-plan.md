@@ -83,7 +83,7 @@ These decisions are foundational unless reopened through an Architecture Decisio
 | Window/input | winit | Rust-native cross-platform window and event handling |
 | Audio | Kira preferred, Rodio acceptable for simple playback | Kira offers richer game-audio design |
 | Project files | Text-first + stable GUIDs | Git-friendly, diffable, mergeable |
-| Runtime bundles | `.ktbundle` | Generated runtime content packages for local/remote loading |
+| Runtime bundles | `.knbundle` | Generated runtime content packages for local/remote loading |
 | Source assets | committed to Git where reasonable | Source of truth should travel with project |
 | Import cache | not committed | Rebuildable, generated, platform-specific/noisy |
 
@@ -524,18 +524,18 @@ my_game/
   Kinetik.toml
 
   scenes/
-    main.ktscene
+    main.knscene
 
   prefabs/
-    Coin.ktprefab
-    Enemy.ktprefab
+    Coin.knprefab
+    Enemy.knprefab
 
   scripts/
     GameManager.luauu
 
   project/
-    assets.ktmanifest
-    instances.ktmanifest
+    assets.knmanifest
+    instances.knmanifest
 
   assets/
     models/
@@ -736,7 +736,7 @@ Source assets should have stable metadata in centralized manifests:
 
 ```text
 assets/models/tree.glb
-project/assets.ktmanifest
+project/assets.knmanifest
 ```
 
 Example:
@@ -782,7 +782,7 @@ material = "res://assets/materials/bark.kmat"
 Bad:
 
 ```toml
-mesh = ".kinetik/imported/abc123.ktmesh"
+mesh = ".kinetik/imported/abc123.knmesh"
 ```
 
 ---
@@ -798,7 +798,7 @@ Source assets
   ↓ import
 Optimized runtime assets
   ↓ pack
-.ktbundle
+.knbundle
   ↓ load from disk/CDN/S3/mod folder
 Mounted runtime resources
 ```
@@ -806,11 +806,11 @@ Mounted runtime resources
 Example bundles:
 
 ```text
-base_game.ktbundle
-chapter_02.ktbundle
-weapons.ktbundle
-winter_event.ktbundle
-world_chunk_0_0.ktbundle
+base_game.knbundle
+chapter_02.knbundle
+weapons.knbundle
+winter_event.knbundle
+world_chunk_0_0.knbundle
 ```
 
 ### 10.2 Uses
@@ -888,7 +888,7 @@ Address map:
 "enemy.ice_golem" = {
   guid = "asset_abc",
   bundle = "chapter_02",
-  path = "res://game/prefabs/IceGolem.ktprefab"
+  path = "res://game/prefabs/IceGolem.knprefab"
 }
 ```
 
@@ -896,8 +896,8 @@ Address map:
 
 ```bash
 kinetik bundle build --config bundles.toml
-kinetik bundle inspect dist/chapter_02.ktbundle
-kinetik bundle verify dist/chapter_02.ktbundle
+kinetik bundle inspect dist/chapter_02.knbundle
+kinetik bundle verify dist/chapter_02.knbundle
 kinetik bundle upload s3://my-game-content/
 ```
 

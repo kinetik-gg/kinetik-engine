@@ -294,7 +294,7 @@ mod tests {
             model.settings().identity().engine_compatibility(),
             TEST_ENGINE_COMPATIBILITY
         );
-        assert_eq!(model.documents().active_scene(), "scenes/main.ktscene");
+        assert_eq!(model.documents().active_scene(), "scenes/main.knscene");
         assert!(model.diagnostics().is_empty());
     }
 
@@ -304,7 +304,7 @@ mod tests {
         let model = project_model_with_valid_layout();
 
         assert!(paths.contains(&"Kinetik.toml"));
-        assert!(paths.contains(&"project/assets.ktmanifest"));
+        assert!(paths.contains(&"project/assets.knmanifest"));
         assert!(model.diagnostics().is_empty());
     }
 

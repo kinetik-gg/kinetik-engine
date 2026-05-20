@@ -18,7 +18,7 @@ silently replaced with new identity.
 
 Source assets plus committed centralized manifests, ignored cache.
 
-Asset identity lives in `project/assets.ktmanifest`.
+Asset identity lives in `project/assets.knmanifest`.
 
 Source assets are referenced by both:
 

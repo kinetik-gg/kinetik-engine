@@ -19,7 +19,7 @@ Kinetik is not a Roblox hosted-server replacement. It does not imply client/serv
 - Window/input: winit.
 - Audio: Kira preferred.
 - Project files: text-first, deterministic, GUID-backed, Git-friendly, and editor-scaffolded.
-- Runtime content: generated `.ktbundle` packages.
+- Runtime content: generated `.knbundle` packages.
 
 ## Architecture Laws
 
