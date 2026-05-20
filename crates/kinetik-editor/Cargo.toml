@@ -18,3 +18,4 @@ kinetik-project = { path = "../kinetik-project" }
 kinetik-reflect = { path = "../kinetik-reflect" }
 kinetik-resource = { path = "../kinetik-resource" }
 kinetik-scene = { path = "../kinetik-scene" }
+winit = "0.30.13"

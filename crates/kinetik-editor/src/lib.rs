@@ -1,6 +1,7 @@
 //! editor scaffold for Kinetik.
 
 mod mcp;
+mod shell;
 
 pub use mcp::{
     diagnostics_list_response, dirty_state_response, project_status_response,
@@ -8,6 +9,10 @@ pub use mcp::{
     McpMutatingCommand, McpMutationResponse, McpMutationSession, McpReadOnlyCommand,
     McpSceneMutationRequest, McpUndoRedoResponse, ProjectStatusResponse,
     ResourceManifestEntrySummary, ResourceManifestResponse, SceneInstanceSummary,
+};
+pub use shell::{
+    default_editor_shell_layout, run_editor_shell, EditorPanel, EditorShellError,
+    EditorShellLayout, EditorShellState, EditorShellWindow, PanelDock, ToolbarAction,
 };
 
 /// Returns the crate name for smoke tests and early integration checks.

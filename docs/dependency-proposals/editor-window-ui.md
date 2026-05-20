@@ -1,6 +1,6 @@
 # Editor, Window, and UI Dependency Proposal
 
-Status: Approved direction, blocked on MSRV/version installation decision.
+Status: Approved for M16-M20 recommended dependency path.
 
 Related ADRs and docs:
 
@@ -11,15 +11,17 @@ Related ADRs and docs:
 - ADR 0019: Edit, Play, and Runtime State Boundaries
 - Crate map: `docs/architecture/crate-map.md`
 
-## Decision Needed
+## Decision
 
-Approve the first editor/window/UI dependency direction before Kinetik Studio
-shell work begins.
+The first editor/window/UI dependency direction is approved for M16-M20 roadmap
+work.
 
 The accepted stack names Vello editor direction and `winit` is already listed
-as preapproved direction in ADR 0018, but that is not installation approval.
-Latest Vello also creates an MSRV decision because `vello` 0.9 reports Rust
-1.88 while the workspace declares Rust 1.80.
+as preapproved direction in ADR 0018. User approval on 2026-05-20 clears the
+installation blocker for the recommended path through M20. Latest Vello still
+creates an MSRV decision because `vello` 0.9 reports Rust 1.88 while the
+workspace declares Rust 1.80, so M16 installs `winit` only and defers Vello
+until a focused UI-rendering slice needs it.
 
 Current crate metadata was checked with `cargo info` on 2026-05-20:
 
@@ -33,9 +35,9 @@ Current crate metadata was checked with `cargo info` on 2026-05-20:
 
 ## Recommendation
 
-Use `winit` for the editor shell event loop and window creation once approved.
-Use Vello for editor UI rendering only after maintainers choose an MSRV path or
-approve a deliberate older Vello pin.
+Use `winit` for the editor shell event loop and window creation. Use Vello for
+editor UI rendering only after maintainers choose an MSRV path or approve a
+deliberate older Vello pin in a focused issue.
 
 Do not install `accesskit` directly in the first shell issue unless that issue
 also defines an accessibility data contract. Do not let editor UI dependencies
@@ -129,6 +131,7 @@ surface interoperability coordinated with `kinetik-render`.
 
 Approved by maintainer direction in issue #48 on 2026-05-20.
 
-Create a separate installation issue before adding any crates. That issue must
-resolve the Vello MSRV/version decision, record exact features, and keep
-editor/window/UI dependencies behind the `kinetik-editor` boundary.
+User approval on 2026-05-20 cleared recommended dependency proposals through
+M20. M16 installs `winit` 0.30.13 behind the `kinetik-editor` boundary. Vello,
+direct `accesskit`, and direct `raw-window-handle` dependencies remain deferred
+until a focused issue needs them and records the exact version/features.
