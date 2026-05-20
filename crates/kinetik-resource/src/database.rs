@@ -4,7 +4,7 @@ use kinetik_core::Diagnostic;
 use kinetik_reflect::{AssetReferenceValue, PropertyValue};
 use kinetik_scene::Scene;
 
-use crate::ResourceError;
+use crate::{validate_asset_kind, AssetImportKind, ResourceError};
 use crate::{
     AssetGuid, AssetManifest, AssetManifestEntry, AssetPath, AssetReference, ImportCacheRecord,
     ResourceResult,
@@ -164,6 +164,43 @@ impl ResourceDatabase {
             Err(error) => return vec![error.to_diagnostic()],
         };
         self.asset_reference_diagnostics(&AssetReference::new(guid, path))
+    }
+
+    /// Validates a durable material reference against manifest identity and material path kind.
+    ///
+    /// This does not parse `.knmat` source data. It keeps the resource database
+    /// responsible for stable identity and path contracts while higher-level
+    /// importers own material content validation.
+    #[must_use]
+    pub fn material_reference_diagnostics(&self, reference: &AssetReference) -> Vec<Diagnostic> {
+        let mut diagnostics = self.asset_reference_diagnostics(reference);
+        if let Err(error) = validate_asset_kind(reference.path().clone(), AssetImportKind::Material)
+        {
+            diagnostics.push(error.to_diagnostic());
+        }
+        diagnostics
+    }
+
+    /// Validates raw durable material reference fields before constructing an asset reference.
+    ///
+    /// Malformed GUIDs or paths are reported directly. Valid raw fields are then
+    /// checked against committed manifest identity and material extension rules.
+    #[must_use]
+    pub fn raw_material_reference_diagnostics(
+        &self,
+        raw_guid: u64,
+        raw_path: impl Into<String>,
+    ) -> Vec<Diagnostic> {
+        let path = raw_path.into();
+        let guid = match AssetGuid::try_new(raw_guid) {
+            Ok(guid) => guid,
+            Err(error) => return vec![error.to_diagnostic()],
+        };
+        let path = match AssetPath::new(path) {
+            Ok(path) => path,
+            Err(error) => return vec![error.to_diagnostic()],
+        };
+        self.material_reference_diagnostics(&AssetReference::new(guid, path))
     }
 
     /// Validates reflected scene asset references through this resource database.

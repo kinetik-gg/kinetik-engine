@@ -44,6 +44,13 @@ pub enum ResourceError {
         /// Invalid field value.
         value: String,
     },
+    /// Asset path extension did not match the expected import kind.
+    InvalidAssetKind {
+        /// Invalid asset path.
+        path: AssetPath,
+        /// Human-readable extension list expected by the importer.
+        expected: &'static str,
+    },
     /// Import cache metadata contained more than one record for the same asset.
     DuplicateImportCacheAsset {
         /// Duplicate stable asset identity.
@@ -101,6 +108,10 @@ impl ResourceError {
     pub const INVALID_IMPORTER_METADATA_CODE: DiagnosticCode =
         DiagnosticCode::new("KT_RESOURCE_INVALID_IMPORTER_METADATA");
 
+    /// Stable diagnostic code for asset paths that do not match an import kind.
+    pub const INVALID_ASSET_KIND_CODE: DiagnosticCode =
+        DiagnosticCode::new("KT_RESOURCE_INVALID_ASSET_KIND");
+
     /// Stable diagnostic code for duplicate import cache records.
     pub const DUPLICATE_IMPORT_CACHE_RECORD_CODE: DiagnosticCode =
         DiagnosticCode::new("KT_RESOURCE_DUPLICATE_IMPORT_CACHE_RECORD");
@@ -137,6 +148,7 @@ impl ResourceError {
                 Self::DUPLICATE_ASSET_ENTRY_CODE
             }
             Self::InvalidImporterMetadata { .. } => Self::INVALID_IMPORTER_METADATA_CODE,
+            Self::InvalidAssetKind { .. } => Self::INVALID_ASSET_KIND_CODE,
             Self::DuplicateImportCacheAsset { .. } => Self::DUPLICATE_IMPORT_CACHE_RECORD_CODE,
             Self::MissingSourceAsset { .. } => Self::MISSING_SOURCE_ASSET_CODE,
             Self::MissingAssetReference { .. } => Self::MISSING_ASSET_REFERENCE_CODE,
@@ -153,6 +165,7 @@ impl ResourceError {
         match self {
             Self::InvalidAssetPath { path, .. } => location.asset_path = Some(path.clone()),
             Self::DuplicateAssetPath { path }
+            | Self::InvalidAssetKind { path, .. }
             | Self::MissingSourceAsset { path, .. }
             | Self::MissingAssetReference { path, .. } => {
                 location.asset_path = Some(path.as_str().to_owned());
@@ -199,6 +212,9 @@ impl fmt::Display for ResourceError {
             }
             Self::InvalidImporterMetadata { field, value } => {
                 write!(f, "asset manifest importer {field} is invalid: {value}")
+            }
+            Self::InvalidAssetKind { path, expected } => {
+                write!(f, "asset path {path} does not match import kind: expected {expected}")
             }
             Self::DuplicateImportCacheAsset { guid } => {
                 write!(f, "import cache contains duplicate record for {guid}")
