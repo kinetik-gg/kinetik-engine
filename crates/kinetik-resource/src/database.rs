@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 
 use kinetik_core::Diagnostic;
+use kinetik_reflect::{AssetReferenceValue, PropertyValue};
+use kinetik_scene::Scene;
 
 use crate::ResourceError;
 use crate::{
@@ -113,6 +115,21 @@ impl ResourceDatabase {
         self.asset_reference_diagnostics(&AssetReference::new(guid, path))
     }
 
+    /// Validates reflected scene asset references through this resource database.
+    ///
+    /// Diagnostics are emitted in deterministic scene traversal and property
+    /// path order. Resource diagnostics are enriched with scene instance GUID,
+    /// scene path, and reflected property path context.
+    #[must_use]
+    pub fn scene_asset_reference_diagnostics(&self, scene: &Scene) -> Vec<Diagnostic> {
+        let Some(root_id) = scene.root_id() else {
+            return Vec::new();
+        };
+        let mut diagnostics = Vec::new();
+        self.collect_scene_asset_reference_diagnostics(scene, root_id, &mut diagnostics);
+        diagnostics
+    }
+
     /// Reports manifest entries whose source paths are not present in observed project state.
     ///
     /// The caller supplies source paths observed by a higher-level workspace or
@@ -135,5 +152,44 @@ impl ResourceDatabase {
                 .to_diagnostic()
             })
             .collect()
+    }
+
+    fn collect_scene_asset_reference_diagnostics(
+        &self,
+        scene: &Scene,
+        id: kinetik_core::InstanceId,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) {
+        let Ok(instance) = scene.get(id) else {
+            return;
+        };
+        let scene_path = scene.path(id).ok();
+
+        for (property_path, value) in &instance.properties {
+            let PropertyValue::AssetReference(reference) = value else {
+                continue;
+            };
+            diagnostics.extend(
+                self.asset_reference_value_diagnostics(reference)
+                    .into_iter()
+                    .map(|mut diagnostic| {
+                        diagnostic.location.instance_guid = Some(instance.guid);
+                        diagnostic.location.scene_path.clone_from(&scene_path);
+                        diagnostic.location.property_path = Some(property_path.clone());
+                        diagnostic
+                    }),
+            );
+        }
+
+        for child_id in &instance.children {
+            self.collect_scene_asset_reference_diagnostics(scene, *child_id, diagnostics);
+        }
+    }
+
+    fn asset_reference_value_diagnostics(
+        &self,
+        reference: &AssetReferenceValue,
+    ) -> Vec<Diagnostic> {
+        self.raw_asset_reference_diagnostics(reference.guid(), reference.path())
     }
 }
