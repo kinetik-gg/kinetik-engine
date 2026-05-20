@@ -148,6 +148,13 @@ fn property_values_report_reflected_types() {
         PropertyValue::ResourceId(ResourceId::new(1)).property_type(),
         PropertyType::ResourceId
     );
+    assert_eq!(
+        PropertyValue::AssetReference(
+            AssetReferenceValue::new(1, "res://assets/materials/stone.knmat").unwrap()
+        )
+        .property_type(),
+        PropertyType::AssetReference
+    );
 }
 
 #[test]
@@ -182,6 +189,74 @@ fn property_values_validate_against_descriptors() {
 }
 
 #[test]
+fn asset_reference_values_preserve_guid_and_path() {
+    let reference = AssetReferenceValue::new(42, "res://assets/materials/stone.knmat").unwrap();
+
+    assert_eq!(reference.guid(), 42);
+    assert_eq!(reference.path(), "res://assets/materials/stone.knmat");
+    assert_eq!(
+        reference
+            .with_path("res://assets/materials/renamed_stone.knmat")
+            .unwrap()
+            .path(),
+        "res://assets/materials/renamed_stone.knmat"
+    );
+}
+
+#[test]
+fn asset_reference_values_reject_missing_fields_and_malformed_paths() {
+    assert_eq!(
+        AssetReferenceValue::new(0, "res://assets/materials/stone.knmat").unwrap_err(),
+        ValueError::InvalidAssetReferenceGuid { raw: 0 }
+    );
+    assert_eq!(
+        AssetReferenceValue::new(1, "").unwrap_err(),
+        ValueError::EmptyAssetReferencePath
+    );
+    assert_eq!(
+        AssetReferenceValue::new(1, "assets/materials/stone.knmat").unwrap_err(),
+        ValueError::InvalidAssetReferencePath {
+            path: "assets/materials/stone.knmat".to_owned(),
+            reason: "must start with res://"
+        }
+    );
+    assert_eq!(
+        AssetReferenceValue::new(1, "res://assets/../stone.knmat").unwrap_err(),
+        ValueError::InvalidAssetReferencePath {
+            path: "res://assets/../stone.knmat".to_owned(),
+            reason: "must not contain relative path segments"
+        }
+    );
+}
+
+#[test]
+fn asset_reference_values_validate_against_descriptors() {
+    let descriptor = PropertyDescriptor::new("Material", "Material", PropertyType::AssetReference)
+        .unwrap()
+        .with_editor_hint(EditorHint::AssetPicker);
+    let value = PropertyValue::AssetReference(
+        AssetReferenceValue::new(7, "res://assets/materials/stone.knmat").unwrap(),
+    );
+
+    assert!(value.is_compatible_with(&descriptor));
+    value.validate_for_descriptor(&descriptor).unwrap();
+
+    let mismatch = PropertyValue::ResourceId(ResourceId::new(7))
+        .validate_for_descriptor(&descriptor)
+        .unwrap_err();
+
+    assert_eq!(
+        mismatch,
+        ValueError::TypeMismatch {
+            path: "Material".to_owned(),
+            expected: PropertyType::AssetReference,
+            actual: PropertyType::ResourceId
+        }
+    );
+    assert_eq!(mismatch.diagnostic_code(), ValueError::TYPE_MISMATCH_CODE);
+}
+
+#[test]
 fn property_value_defaults_are_type_aware() {
     assert_eq!(
         PropertyValue::type_default(PropertyType::Transform).unwrap(),
@@ -195,6 +270,12 @@ fn property_value_defaults_are_type_aware() {
         PropertyValue::type_default(PropertyType::InstanceId).unwrap_err(),
         ValueError::NoTypeDefault {
             value_type: PropertyType::InstanceId
+        }
+    );
+    assert_eq!(
+        PropertyValue::type_default(PropertyType::AssetReference).unwrap_err(),
+        ValueError::NoTypeDefault {
+            value_type: PropertyType::AssetReference
         }
     );
 }

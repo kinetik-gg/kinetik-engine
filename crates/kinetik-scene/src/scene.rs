@@ -468,6 +468,11 @@ pub(crate) fn property_value_error(
             property_path: property_path.to_owned(),
             value_type,
         },
+        ValueError::InvalidAssetReferenceGuid { .. }
+        | ValueError::EmptyAssetReferencePath
+        | ValueError::InvalidAssetReferencePath { .. } => {
+            invalid_property_descriptor(class_name, property_path, error)
+        }
         ValueError::TypeMismatch {
             path,
             expected,

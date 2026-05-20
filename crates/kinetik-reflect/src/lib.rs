@@ -9,7 +9,7 @@ pub use descriptor::{
     Scriptability, SerializationPolicy, ValidationRule,
 };
 pub use error::{DescriptorError, ReflectResult, ValueError, ValueResult};
-pub use value::{PropertyType, PropertyValue};
+pub use value::{AssetReferenceValue, PropertyType, PropertyValue};
 
 /// Returns the crate name for smoke tests and early integration checks.
 #[must_use]
