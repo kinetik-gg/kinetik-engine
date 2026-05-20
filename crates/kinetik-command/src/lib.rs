@@ -12,6 +12,7 @@ mod history;
 mod mode;
 mod result;
 mod scene;
+mod script;
 mod target_mode;
 
 pub use change::{ChangeTarget, CommandChangeRecord, PropertyValueChange};
@@ -27,6 +28,11 @@ pub use scene::{
     SceneReparentCommandResult, SceneSetPropertyCommandResult, CREATE_INSTANCE_COMMAND,
     DELETE_INSTANCE_COMMAND, DUPLICATE_INSTANCE_COMMAND, RENAME_INSTANCE_COMMAND,
     REPARENT_INSTANCE_COMMAND, SET_PROPERTY_COMMAND,
+};
+pub use script::{
+    attach_instance_script, detach_instance_script, ScriptAttachCommandResult,
+    ScriptAttachmentDocument, ScriptDetachCommandResult, ATTACH_SCRIPT_COMMAND,
+    DETACH_SCRIPT_COMMAND,
 };
 pub use target_mode::{require_specific_target_mode, require_target_mode};
 

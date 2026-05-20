@@ -5,6 +5,7 @@ use kinetik_reflect::PropertyValue;
 
 mod scene_commands;
 mod scene_property_commands;
+mod script_commands;
 
 #[test]
 fn exposes_crate_name() {
