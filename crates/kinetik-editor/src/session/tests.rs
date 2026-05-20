@@ -1,4 +1,4 @@
-use kinetik_command::create_scene_child_instance;
+use kinetik_command::{create_scene_child_instance, CommandTargetMode};
 use kinetik_core::{
     Diagnostic, DiagnosticBlockingScope, DiagnosticCode, DiagnosticSeverity, DiagnosticSource,
 };
@@ -12,7 +12,10 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::*;
-use crate::{EditorPanel, InspectorCommandError};
+use crate::{
+    EditorPanel, InspectorCommandError, McpSceneMutationRequest, McpSelectionRequest,
+    McpSelectionResponse,
+};
 
 fn demo_project() -> ProjectModel {
     ProjectModel::new(
@@ -253,6 +256,193 @@ fn diagnostics_panel_projects_session_diagnostics_in_order() {
         panel.items()[1].blocking,
         Some(DiagnosticBlockingScope::Save)
     );
+}
+
+#[test]
+fn mcp_snapshot_reports_editor_session_selection_focus_diagnostics_and_dirty_state() {
+    let mut session = open_demo_session();
+    let workspace = session
+        .active_scene()
+        .unwrap()
+        .get_by_path("/Game/Workspace")
+        .unwrap()
+        .id;
+    session
+        .explorer_create_child(workspace, "Part", "Block")
+        .expect("create block");
+    let block = session
+        .active_scene()
+        .unwrap()
+        .get_by_path("/Game/Workspace/Block")
+        .unwrap()
+        .id;
+    session.mcp_apply_selection(McpSelectionRequest::SelectSceneInstance { instance_id: block });
+    session.mcp_apply_selection(McpSelectionRequest::FocusPanel {
+        panel: EditorPanel::Inspector,
+    });
+    session.replace_session_diagnostics([Diagnostic::new(
+        DiagnosticCode::new("KT_TEST_MCP"),
+        DiagnosticSeverity::Info,
+        DiagnosticSource::new("Test"),
+        "mcp parity",
+    )]);
+
+    let snapshot = session.mcp_snapshot();
+
+    assert_eq!(snapshot.project.unwrap().project_name, "Demo");
+    assert!(snapshot
+        .scene
+        .iter()
+        .any(|instance| instance.scene_path == "/Game/Workspace/Block"));
+    assert_eq!(
+        snapshot.selection,
+        McpSelectionResponse::SceneInstance {
+            instance_id: block.raw(),
+            guid: session
+                .active_scene()
+                .unwrap()
+                .get(block)
+                .unwrap()
+                .guid
+                .raw(),
+            scene_path: "/Game/Workspace/Block".to_owned(),
+        }
+    );
+    assert_eq!(snapshot.focus, Some(EditorPanel::Inspector));
+    assert_eq!(snapshot.diagnostics[0].code, "KT_TEST_MCP");
+    assert_eq!(
+        snapshot.dirty_state.summaries,
+        vec!["created /Game/Workspace/Block"]
+    );
+}
+
+#[test]
+fn mcp_selection_commands_update_same_session_state_as_ui_selection() {
+    let mut session = open_demo_session();
+    let workspace = session
+        .active_scene()
+        .unwrap()
+        .get_by_path("/Game/Workspace")
+        .unwrap()
+        .id;
+
+    let response = session.mcp_apply_selection(McpSelectionRequest::SelectSceneInstance {
+        instance_id: workspace,
+    });
+    session.mcp_apply_selection(McpSelectionRequest::FocusPanel {
+        panel: EditorPanel::Explorer,
+    });
+
+    assert!(response.diagnostics.is_empty());
+    assert!(matches!(
+        session.selection().document(),
+        EditorDocumentSelection::SceneInstance { id, .. } if *id == workspace
+    ));
+    assert_eq!(
+        session.selection().focus().panel(),
+        Some(EditorPanel::Explorer)
+    );
+
+    let response = session.mcp_apply_selection(McpSelectionRequest::SelectProjectDocument {
+        path: "Kinetik.toml".to_owned(),
+    });
+    assert_eq!(
+        response.selection,
+        McpSelectionResponse::ProjectDocument {
+            path: "Kinetik.toml".to_owned(),
+        }
+    );
+
+    let response = session.mcp_apply_selection(McpSelectionRequest::Clear);
+    assert_eq!(response.selection, McpSelectionResponse::None);
+    assert_eq!(response.focus, None);
+}
+
+#[test]
+fn mcp_scene_mutation_matches_explorer_command_path() {
+    let mut ui_session = open_demo_session();
+    let mut mcp_session = open_demo_session();
+    let workspace = ui_session
+        .active_scene()
+        .unwrap()
+        .get_by_path("/Game/Workspace")
+        .unwrap()
+        .id;
+
+    let ui_block = ui_session
+        .explorer_create_child(workspace, "Part", "Block")
+        .expect("ui create");
+    let response =
+        mcp_session.mcp_execute_scene_mutation(McpSceneMutationRequest::CreateInstance {
+            target_mode: Some(CommandTargetMode::Edit),
+            parent_id: workspace,
+            class_name: "Part".to_owned(),
+            name: "Block".to_owned(),
+        });
+
+    assert!(response.diagnostics.is_empty());
+    assert_eq!(
+        response.change_summaries,
+        vec!["created /Game/Workspace/Block"]
+    );
+    assert_eq!(response.undo_group, Some(1));
+    assert_eq!(
+        mcp_session.active_scene().unwrap().to_document().unwrap(),
+        ui_session.active_scene().unwrap().to_document().unwrap()
+    );
+    assert_eq!(
+        mcp_session
+            .dirty_state()
+            .changes()
+            .iter()
+            .map(kinetik_command::DirtyChangeExplanation::change_summary)
+            .collect::<Vec<_>>(),
+        ui_session
+            .dirty_state()
+            .changes()
+            .iter()
+            .map(kinetik_command::DirtyChangeExplanation::change_summary)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        mcp_session
+            .active_scene()
+            .unwrap()
+            .get_by_path("/Game/Workspace/Block")
+            .unwrap()
+            .guid,
+        ui_session
+            .active_scene()
+            .unwrap()
+            .get(ui_block)
+            .unwrap()
+            .guid
+    );
+}
+
+#[test]
+fn mcp_scene_mutation_reports_ambiguous_mode_without_dirtying_session() {
+    let mut session = open_demo_session();
+    let workspace = session
+        .active_scene()
+        .unwrap()
+        .get_by_path("/Game/Workspace")
+        .unwrap()
+        .id;
+
+    let response = session.mcp_execute_scene_mutation(McpSceneMutationRequest::CreateInstance {
+        target_mode: None,
+        parent_id: workspace,
+        class_name: "Part".to_owned(),
+        name: "Block".to_owned(),
+    });
+
+    assert_eq!(
+        response.diagnostics[0].code,
+        "KT_COMMAND_AMBIGUOUS_TARGET_MODE"
+    );
+    assert!(response.dirty_state.summaries.is_empty());
+    assert!(session.dirty_state().is_clean());
 }
 
 #[test]

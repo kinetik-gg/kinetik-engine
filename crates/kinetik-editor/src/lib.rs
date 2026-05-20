@@ -12,9 +12,10 @@ pub use inspector::{InspectorCommandError, InspectorPropertyRow, InspectorSnapsh
 pub use mcp::{
     diagnostics_list_response, dirty_state_response, project_status_response,
     resource_manifest_response, scene_hierarchy_response, DiagnosticSummary, DirtyStateResponse,
-    McpMutatingCommand, McpMutationResponse, McpMutationSession, McpReadOnlyCommand,
-    McpSceneMutationRequest, McpUndoRedoResponse, ProjectStatusResponse,
-    ResourceManifestEntrySummary, ResourceManifestResponse, SceneInstanceSummary,
+    McpEditorSnapshot, McpMutatingCommand, McpMutationResponse, McpMutationSession,
+    McpReadOnlyCommand, McpSceneMutationRequest, McpSelectionCommandResponse, McpSelectionRequest,
+    McpSelectionResponse, McpUndoRedoResponse, ProjectStatusResponse, ResourceManifestEntrySummary,
+    ResourceManifestResponse, SceneInstanceSummary,
 };
 pub use persistence::EditorPersistenceError;
 pub use session::{

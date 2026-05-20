@@ -236,7 +236,7 @@ impl McpMutationSession {
 }
 
 impl McpSceneMutationRequest {
-    fn command_kind(&self) -> &'static str {
+    pub(crate) fn command_kind(&self) -> &'static str {
         match self {
             Self::CreateInstance { .. } => CREATE_INSTANCE_COMMAND,
             Self::DeleteInstance { .. } => DELETE_INSTANCE_COMMAND,
@@ -247,7 +247,7 @@ impl McpSceneMutationRequest {
         }
     }
 
-    const fn target_mode(&self) -> Option<CommandTargetMode> {
+    pub(crate) const fn target_mode(&self) -> Option<CommandTargetMode> {
         match self {
             Self::CreateInstance { target_mode, .. }
             | Self::DeleteInstance { target_mode, .. }
@@ -259,7 +259,7 @@ impl McpSceneMutationRequest {
     }
 }
 
-fn execute_scene_command(
+pub(crate) fn execute_scene_command(
     scene: &mut Scene,
     request: McpSceneMutationRequest,
     document_path: &str,
