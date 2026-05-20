@@ -514,6 +514,7 @@ dependencies = [
  "kinetik-app",
  "kinetik-command",
  "kinetik-core",
+ "kinetik-physics",
  "kinetik-project",
  "kinetik-reflect",
  "kinetik-render",

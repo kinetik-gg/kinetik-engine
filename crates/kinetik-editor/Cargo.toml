@@ -21,4 +21,5 @@ kinetik-scene = { path = "../kinetik-scene" }
 winit = "0.30.13"
 
 [dev-dependencies]
+kinetik-physics = { path = "../kinetik-physics" }
 kinetik-render = { path = "../kinetik-render" }
