@@ -44,6 +44,13 @@ pub enum ResourceError {
         /// Invalid field value.
         value: String,
     },
+    /// Manifest entry source asset was not present in observed project state.
+    MissingSourceAsset {
+        /// Missing stable asset identity.
+        guid: AssetGuid,
+        /// Missing project asset path.
+        path: AssetPath,
+    },
     /// Project layout validation found missing required paths.
     MissingProjectPaths {
         /// Missing workspace-relative paths.
@@ -68,6 +75,10 @@ impl ResourceError {
     pub const INVALID_IMPORTER_METADATA_CODE: DiagnosticCode =
         DiagnosticCode::new("KT_RESOURCE_INVALID_IMPORTER_METADATA");
 
+    /// Stable diagnostic code for missing source assets.
+    pub const MISSING_SOURCE_ASSET_CODE: DiagnosticCode =
+        DiagnosticCode::new("KT_RESOURCE_MISSING_SOURCE_ASSET");
+
     /// Stable diagnostic code for missing project layout paths.
     pub const MISSING_PROJECT_PATHS_CODE: DiagnosticCode =
         DiagnosticCode::new("KT_RESOURCE_MISSING_PROJECT_PATHS");
@@ -85,6 +96,7 @@ impl ResourceError {
                 Self::DUPLICATE_ASSET_ENTRY_CODE
             }
             Self::InvalidImporterMetadata { .. } => Self::INVALID_IMPORTER_METADATA_CODE,
+            Self::MissingSourceAsset { .. } => Self::MISSING_SOURCE_ASSET_CODE,
             Self::MissingProjectPaths { .. } => Self::MISSING_PROJECT_PATHS_CODE,
         }
     }
@@ -95,7 +107,7 @@ impl ResourceError {
         let mut location = DiagnosticLocation::new();
         match self {
             Self::InvalidAssetPath { path, .. } => location.asset_path = Some(path.clone()),
-            Self::DuplicateAssetPath { path } => {
+            Self::DuplicateAssetPath { path } | Self::MissingSourceAsset { path, .. } => {
                 location.asset_path = Some(path.as_str().to_owned());
             }
             _ => {}
@@ -133,6 +145,9 @@ impl fmt::Display for ResourceError {
             }
             Self::InvalidImporterMetadata { field, value } => {
                 write!(f, "asset manifest importer {field} is invalid: {value}")
+            }
+            Self::MissingSourceAsset { guid, path } => {
+                write!(f, "source asset is missing for {guid} at {path}")
             }
             Self::MissingProjectPaths { paths } => {
                 write!(f, "project layout is missing required paths: ")?;

@@ -1,5 +1,6 @@
 //! Resource database integration tests.
 
+use kinetik_core::DiagnosticBlockingScope;
 use kinetik_resource::{
     AssetGuid, AssetManifest, AssetManifestEntry, AssetPath, ResourceDatabase, ResourceError,
 };
@@ -70,4 +71,68 @@ fn resource_database_validates_raw_res_path_lookup() {
         error.diagnostic_code(),
         ResourceError::INVALID_ASSET_PATH_CODE
     );
+}
+
+#[test]
+fn resource_database_reports_no_missing_sources_when_all_paths_are_observed() {
+    let manifest = AssetManifest::from_entries(vec![
+        manifest_entry(1, "res://assets/alpha.mesh"),
+        manifest_entry(2, "res://assets/mid.mesh"),
+    ])
+    .unwrap();
+    let database = ResourceDatabase::from_manifest(manifest);
+    let observed_paths = vec![
+        AssetPath::new("res://assets/mid.mesh").unwrap(),
+        AssetPath::new("res://assets/alpha.mesh").unwrap(),
+    ];
+
+    assert!(database
+        .missing_source_diagnostics(observed_paths)
+        .is_empty());
+}
+
+#[test]
+fn resource_database_reports_missing_sources_in_manifest_order() {
+    let manifest = AssetManifest::from_entries(vec![
+        manifest_entry(3, "res://assets/zeta.mesh"),
+        manifest_entry(1, "res://assets/alpha.mesh"),
+        manifest_entry(2, "res://assets/mid.mesh"),
+    ])
+    .unwrap();
+    let database = ResourceDatabase::from_manifest(manifest);
+    let observed_paths = vec![AssetPath::new("res://assets/mid.mesh").unwrap()];
+
+    let diagnostics = database.missing_source_diagnostics(observed_paths);
+
+    assert_eq!(diagnostics.len(), 2);
+    assert_eq!(
+        diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.location.asset_path.as_deref())
+            .collect::<Vec<_>>(),
+        vec![
+            Some("res://assets/alpha.mesh"),
+            Some("res://assets/zeta.mesh"),
+        ]
+    );
+}
+
+#[test]
+fn resource_database_missing_source_diagnostic_has_stable_shape() {
+    let manifest =
+        AssetManifest::from_entries(vec![manifest_entry(7, "res://assets/missing.mesh")]).unwrap();
+    let database = ResourceDatabase::from_manifest(manifest);
+
+    let diagnostic = database
+        .missing_source_diagnostics(Vec::<AssetPath>::new())
+        .pop()
+        .unwrap();
+
+    assert_eq!(diagnostic.code, ResourceError::MISSING_SOURCE_ASSET_CODE);
+    assert_eq!(diagnostic.blocking, Some(DiagnosticBlockingScope::Import));
+    assert_eq!(
+        diagnostic.location.asset_path.as_deref(),
+        Some("res://assets/missing.mesh")
+    );
+    assert!(diagnostic.message.contains("AssetGuid(7)"));
 }
