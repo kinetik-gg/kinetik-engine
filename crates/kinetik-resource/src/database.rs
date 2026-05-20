@@ -1,3 +1,8 @@
+use std::collections::BTreeSet;
+
+use kinetik_core::Diagnostic;
+
+use crate::ResourceError;
 use crate::{AssetGuid, AssetManifest, AssetManifestEntry, AssetPath, ResourceResult};
 
 /// Engine-owned resource database over committed project manifests.
@@ -57,5 +62,29 @@ impl ResourceDatabase {
     ) -> ResourceResult<Option<&AssetManifestEntry>> {
         let path = AssetPath::new(path)?;
         Ok(self.get_by_path(&path))
+    }
+
+    /// Reports manifest entries whose source paths are not present in observed project state.
+    ///
+    /// The caller supplies source paths observed by a higher-level workspace or
+    /// file-system layer. This keeps the database deterministic and free of IO
+    /// dependencies.
+    #[must_use]
+    pub fn missing_source_diagnostics<I>(&self, observed_paths: I) -> Vec<Diagnostic>
+    where
+        I: IntoIterator<Item = AssetPath>,
+    {
+        let observed_paths = observed_paths.into_iter().collect::<BTreeSet<_>>();
+        self.entries()
+            .iter()
+            .filter(|entry| !observed_paths.contains(entry.path()))
+            .map(|entry| {
+                ResourceError::MissingSourceAsset {
+                    guid: entry.guid(),
+                    path: entry.path().clone(),
+                }
+                .to_diagnostic()
+            })
+            .collect()
     }
 }
