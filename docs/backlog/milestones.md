@@ -697,6 +697,8 @@ Key outputs:
 - Clear distinction between first-template requirements and later engine
   maturity work.
 
+Detailed backlog: `docs/backlog/post-template-roadmap.md`.
+
 Deferred feature areas:
 
 - Audio: buses, playback, spatial audio, editor preview, and mixing workflows.
