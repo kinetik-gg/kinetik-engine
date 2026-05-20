@@ -5,6 +5,7 @@
 //! that surface with dependency-light model types; concrete mutation families
 //! are intentionally left to focused follow-up issues.
 
+mod asset;
 mod change;
 mod dirty;
 mod error;
@@ -15,6 +16,10 @@ mod scene;
 mod script;
 mod target_mode;
 
+pub use asset::{
+    request_asset_reimport, update_asset_path, AssetPathCommandResult, AssetReimportCommandResult,
+    REIMPORT_ASSET_COMMAND, UPDATE_ASSET_PATH_COMMAND,
+};
 pub use change::{ChangeTarget, CommandChangeRecord, PropertyValueChange};
 pub use dirty::{DirtyChangeExplanation, DirtyDocumentExplanation, DirtyStateExplanation};
 pub use error::{CommandError, CommandModelResult};
